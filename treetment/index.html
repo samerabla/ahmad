@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="description" content="treetment® – Professionelle Baumpflege im Rhein-Main-Gebiet. Zertifiziert, zuverlässig, nachhaltig."/>
+    <meta name="theme-color" content="#1a3d2b"/>
+    <title>treetment® – Ihre Bäume. Unsere Leidenschaft.</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" id="leptos-style" href="/pkg/treetment.css"/>
+    <script>
+      // Inline critical scroll handler to avoid FOUC on nav
+      window.addEventListener('scroll', function() {
+        var nav = document.getElementById('main-nav');
+        if (nav) {
+          if (window.scrollY > 60) {
+            nav.classList.remove('nav-transparent');
+            nav.classList.add('nav-white');
+          } else {
+            nav.classList.remove('nav-white');
+            nav.classList.add('nav-transparent');
+          }
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <script type="module" src="/pkg/treetment.js"></script>
+    <script>
+      // Initialize intersection observer for animations
+      document.addEventListener('DOMContentLoaded', function() {
+        var observer = new IntersectionObserver(function(entries) {
+          entries.forEach(function(entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+            }
+          });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.animate-on-scroll').forEach(function(el) {
+          observer.observe(el);
+        });
+      });
+    </script>
+  </body>
+</html>
