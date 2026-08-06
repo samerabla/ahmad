@@ -1,0 +1,534 @@
+<title>PoWi-Briefing</title>
+
+<style>
+  /* ---- Tokens ------------------------------------------------------- */
+  :root {
+    --ground:      #eef1f2;
+    --surface:     #ffffff;
+    --ink:         #171c21;
+    --ink-muted:   #59646c;
+    --ink-faint:   #8a949b;
+    --rule:        #d3d9dc;
+    --rule-soft:   #e3e8ea;
+    --accent:      #8a6220;
+    --accent-tint: #f4ecdd;
+    --accent-edge: #c39440;
+    --alert:       #a4382a;
+    --steady:      #2f6b63;
+
+    --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono:  ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+    --measure: 34rem;
+    --gutter:  9rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:      #131719;
+      --surface:     #1b2124;
+      --ink:         #e3e8ea;
+      --ink-muted:   #99a4ab;
+      --ink-faint:   #6f7a81;
+      --rule:        #2d353a;
+      --rule-soft:   #232a2e;
+      --accent:      #d9a74f;
+      --accent-tint: #241f16;
+      --accent-edge: #a9812f;
+      --alert:       #e08871;
+      --steady:      #6fb0a5;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #131719;
+    --surface:     #1b2124;
+    --ink:         #e3e8ea;
+    --ink-muted:   #99a4ab;
+    --ink-faint:   #6f7a81;
+    --rule:        #2d353a;
+    --rule-soft:   #232a2e;
+    --accent:      #d9a74f;
+    --accent-tint: #241f16;
+    --accent-edge: #a9812f;
+    --alert:       #e08871;
+    --steady:      #6fb0a5;
+  }
+
+  :root[data-theme="light"] {
+    --ground:      #eef1f2;
+    --surface:     #ffffff;
+    --ink:         #171c21;
+    --ink-muted:   #59646c;
+    --ink-faint:   #8a949b;
+    --rule:        #d3d9dc;
+    --rule-soft:   #e3e8ea;
+    --accent:      #8a6220;
+    --accent-tint: #f4ecdd;
+    --accent-edge: #c39440;
+    --alert:       #a4382a;
+    --steady:      #2f6b63;
+  }
+
+  /* ---- Base --------------------------------------------------------- */
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 52rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.15rem, 4vw, 3rem) 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.25rem;
+  }
+
+  a { color: inherit; }
+
+  :is(a, summary):focus-visible {
+    outline: 2px solid var(--accent-edge);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  .label {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* ---- Masthead ----------------------------------------------------- */
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .masthead__kicker {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .masthead__title {
+    font-family: var(--serif);
+    font-size: clamp(2.3rem, 7vw, 3.4rem);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  .masthead__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.4rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    color: var(--ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Lage auf einen Blick ----------------------------------------- */
+  .glance {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+
+  .chip {
+    background: var(--surface);
+    padding: 0.85rem 1rem 0.95rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .chip__key {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .chip__val {
+    font-family: var(--serif);
+    font-size: 1.35rem;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip__val--alert  { color: var(--alert); }
+  .chip__val--steady { color: var(--steady); }
+
+  /* ---- Feed --------------------------------------------------------- */
+  .feed {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .item {
+    display: grid;
+    grid-template-columns: var(--gutter) minmax(0, 1fr);
+    gap: 0 2.25rem;
+    padding: 2.25rem 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .item:first-child { border-top: none; padding-top: 0.25rem; }
+
+  .item__tag {
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding-top: 0.55rem;
+    line-height: 1.5;
+  }
+
+  .item__main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    max-width: var(--measure);
+  }
+
+  .item__head {
+    font-family: var(--serif);
+    font-size: 1.42rem;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  .item__main p { color: var(--ink-muted); }
+
+  /* ---- PoWi-Bezug ---------------------------------------------------- */
+  .powi {
+    background: var(--accent-tint);
+    border-left: 2px solid var(--accent-edge);
+    padding: 0.8rem 1.05rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-top: 0.2rem;
+  }
+
+  .powi__label {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .powi p {
+    font-size: 0.94rem;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+
+  .powi em {
+    font-style: normal;
+    font-weight: 600;
+  }
+
+  /* ---- Quellen ------------------------------------------------------- */
+  .sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1rem;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+  }
+
+  .sources a {
+    color: var(--ink-faint);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 3px;
+  }
+
+  .sources a:hover { color: var(--accent); }
+
+  /* ---- Thema der Woche ----------------------------------------------- */
+  .weekly {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent-edge);
+    padding: clamp(1.4rem, 4vw, 2.25rem);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .weekly__head {
+    font-family: var(--serif);
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  .weekly p { color: var(--ink-muted); max-width: var(--measure); }
+
+  .weekly ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    list-style: none;
+    max-width: var(--measure);
+  }
+
+  .weekly li {
+    position: relative;
+    padding-left: 1.1rem;
+    font-size: 0.96rem;
+    line-height: 1.55;
+    color: var(--ink-muted);
+  }
+
+  .weekly li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.62em;
+    width: 5px;
+    height: 5px;
+    background: var(--accent-edge);
+  }
+
+  .weekly strong { color: var(--ink); font-weight: 600; }
+
+  /* ---- Footer -------------------------------------------------------- */
+  .colophon {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    line-height: 1.7;
+    color: var(--ink-faint);
+  }
+
+  /* ---- Narrow -------------------------------------------------------- */
+  @media (max-width: 44rem) {
+    .item {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.75rem;
+    }
+    .item__tag { padding-top: 0; }
+  }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <div class="masthead__kicker">Lagebericht · Politik und Wirtschaft</div>
+    <h1 class="masthead__title">PoWi-Briefing</h1>
+    <div class="masthead__meta">
+      <span>Donnerstag, 6. August 2026</span>
+      <span>Ausgabe 001</span>
+      <span>Lesezeit ca. 5 Min.</span>
+    </div>
+  </header>
+
+  <section class="glance">
+    <h2 class="label">Lage auf einen Blick</h2>
+    <ul class="chips">
+      <li class="chip">
+        <span class="chip__key">Inflation DE</span>
+        <span class="chip__val">1,9 %</span>
+      </li>
+      <li class="chip">
+        <span class="chip__key">Wachstum 2026</span>
+        <span class="chip__val">1,0 %</span>
+      </li>
+      <li class="chip">
+        <span class="chip__key">AfD Sachsen-Anhalt</span>
+        <span class="chip__val chip__val--alert">&gt; 40 %</span>
+      </li>
+      <li class="chip">
+        <span class="chip__key">Hormus</span>
+        <span class="chip__val chip__val--alert">Blockade</span>
+      </li>
+      <li class="chip">
+        <span class="chip__key">Ukraine</span>
+        <span class="chip__val chip__val--steady">Gespräche</span>
+      </li>
+    </ul>
+  </section>
+
+  <main class="feed">
+
+    <article class="item">
+      <div class="item__tag">International</div>
+      <div class="item__main">
+        <h2 class="item__head">Iran-Krieg: Blockade wieder in Kraft, Verhandlungen drehen sich um die Straße von Hormus</h2>
+        <p>Seit den gemeinsamen US-israelischen Angriffen auf den Iran Ende Februar dauert der Konflikt in wechselnder Intensität an. Der im April vereinbarte Waffenstillstand ist zusammengebrochen, die US-Marineblockade wurde im Juli wieder verhängt — das US-Zentralkommando hat nach eigenen Angaben 44 Handelsschiffe umgeleitet, zwei manövrierunfähig gemacht und zwei geentert.</p>
+        <p>Der Streitpunkt ist inzwischen weniger das Atomprogramm als die Straße von Hormus selbst: Teheran will ein neues Regime für die Durchfahrt durchsetzen, inklusive Gebühren. Oman, das die Meerenge bislang mit dem Iran verwaltet, lehnt Gebühren ab, die USA nennen sie inakzeptabel. In Maskat wird derzeit über konkrete Routenkoordinaten verhandelt.</p>
+        <div class="powi">
+          <span class="powi__label">PoWi-Bezug</span>
+          <p><em>Internationale Beziehungen.</em> Musterfall für das Sicherheitsdilemma und für die Rolle von Vermittlern (Oman, Pakistan) ohne eigene Machtprojektion. Dazu: Seevölkerrecht und das Prinzip der freien Schifffahrt — wer darf eine Meerenge kontrollieren, durch die ein erheblicher Teil des Welt-Öls fließt?</p>
+        </div>
+        <div class="sources">
+          <a href="https://www.aljazeera.com/news/liveblog/2026/8/5/iran-war-live-tehran-oman-talks-on-hormuz-positive-ship-hit-in-red-sea">Al Jazeera</a>
+          <a href="https://www.cnn.com/2026/08/04/world/live-news/iran-war-trump">CNN</a>
+          <a href="https://commonslibrary.parliament.uk/research-briefings/cbp-10637/">House of Commons Library</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="item">
+      <div class="item__tag">International</div>
+      <div class="item__main">
+        <h2 class="item__head">Ukraine: schwerer Angriff auf Kiew, während in Abu Dhabi verhandelt wird</h2>
+        <p>In der Nacht zum 5. August wurden bei einem russischen Luftangriff auf Kiew und Umgebung mindestens 17 Zivilisten getötet und 44 verletzt. Eingesetzt wurden 24 ballistische Raketen, vier Hyperschallraketen vom Typ Zirkon und 115 Drohnen. 98 Drohnen wurden abgefangen — aber keine einzige ballistische Rakete, weil der Ukraine die dafür nötigen Patriot-Abfangraketen ausgehen.</p>
+        <p>Parallel endeten in Abu Dhabi zweitägige, von den USA vermittelte Gespräche zwischen Kiew und Moskau ohne öffentliche Ergebnisse; sie sollen fortgesetzt werden. Beobachter halten ein Einfrieren des Konflikts entlang der jetzigen Linien für zunehmend wahrscheinlich.</p>
+        <div class="powi">
+          <span class="powi__label">PoWi-Bezug</span>
+          <p><em>Sicherheitspolitik und Bündnisse.</em> Die Patriot-Lücke zeigt konkret, was Abhängigkeit in der Bündnispolitik bedeutet — militärische Handlungsfähigkeit hängt an Lieferentscheidungen Dritter. Gut brauchbar für die Frage nach europäischer Verteidigungsfähigkeit und dem Verhältnis von Diplomatie und militärischem Druck.</p>
+        </div>
+        <div class="sources">
+          <a href="https://de.wikipedia.org/wiki/Chronik_des_russischen_%C3%9Cberfalls_auf_die_Ukraine_ab_2026">Chronik (Wikipedia)</a>
+          <a href="https://www.bpb.de/themen/europa/ukraine-analysen/nr-329/576606/dokumentation-friedensverhandlungen/">bpb Ukraine-Analysen</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="item">
+      <div class="item__tag">Deutschland</div>
+      <div class="item__main">
+        <h2 class="item__head">Einen Monat vor den Landtagswahlen: AfD in Sachsen-Anhalt über 40 Prozent</h2>
+        <p>Im September wählen Berlin, Mecklenburg-Vorpommern und Sachsen-Anhalt neue Landtage. In Sachsen-Anhalt führt die AfD in Umfragen mit mehr als 15 Prozentpunkten Vorsprung, Werte über 40 Prozent sind dort inzwischen normal; in Mecklenburg-Vorpommern liegt die Partei bei 38 bis 40 Prozent. Berlin gilt als offen.</p>
+        <p>Damit ist eine Regierungsbeteiligung der AfD auf Landesebene erstmals rechnerisch möglich. Die Wahlkämpfe drehen sich vor allem um Arbeitsplätze und die Zukunft der Industrie, Fachkräftemangel und innere Sicherheit.</p>
+        <div class="powi">
+          <span class="powi__label">PoWi-Bezug</span>
+          <p><em>Parteiensystem und Demokratietheorie.</em> Kernthema für den LK: Wandel vom Volksparteiensystem zur Fragmentierung, Koalitionsarithmetik bei Ausschluss eines großen Akteurs, und die Debatte um die „Brandmauer“. Auch anschlussfähig an Populismus-Theorien und die Frage, was Repräsentation leisten muss.</p>
+        </div>
+        <div class="sources">
+          <a href="https://de.euronews.com/my-europe/2026/08/06/landtagswahlen-2026-umfragen-afd-themen-ueberblick">Euronews</a>
+          <a href="https://www.das-parlament.de/inland/bundeslaender/diese-fuenf-landtagswahlen-stehen-in-2026-an">Das Parlament</a>
+          <a href="https://www.infratest-dimap.de/umfragen-analysen/bundeslaender/sachsen-anhalt/laendertrend/2026/mai/">Infratest dimap</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="item">
+      <div class="item__tag">Deutschland</div>
+      <div class="item__main">
+        <h2 class="item__head">Rentenreform: Koalition streitet über die Rente mit 63</h2>
+        <p>Die Alterssicherungskommission hat ihren Bericht am 23. Juni vorgelegt, der Koalitionsausschuss hat Anfang Juli zugesagt, alle 33 Empfehlungen vollständig umzusetzen; das Gesetzgebungsverfahren soll bis Jahresende abgeschlossen sein. Kanzler Merz nennt es eines der „schwierigsten Reformprojekte unserer Zeit“.</p>
+        <p>Der Konflikt läuft quer durch die Koalition. SPD-Generalsekretär Tim Klüssendorf will langjährig Versicherten weiterhin einen abschlagsfreien früheren Ausstieg ermöglichen; CSU-Kommissionsmitglied Florian Dorn warnt, ohne die Abschaffung der Rente mit 63 sei das Paket als Ganzes gefährdet.</p>
+        <div class="powi">
+          <span class="powi__label">PoWi-Bezug</span>
+          <p><em>Sozialstaat und demografischer Wandel.</em> Lehrbuchbeispiel für einen Verteilungskonflikt zwischen Generationen und für die Grenzen des Generationenvertrags bei schrumpfender Erwerbsbevölkerung. Zeigt außerdem, wie Expertenkommissionen politische Entscheidungen vorbereiten — und wo ihre Empfehlungen an Parteiinteressen scheitern.</p>
+        </div>
+        <div class="sources">
+          <a href="https://www.bundesregierung.de/breg-de/aktuelles/faq-rentenreform-2444534">Bundesregierung</a>
+          <a href="https://www.bundesregierung.de/breg-en/news/pension-job-market-tax-reforms-2445962">Reformüberblick</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="item">
+      <div class="item__tag">Europa</div>
+      <div class="item__main">
+        <h2 class="item__head">EU: Transparenzpflichten für KI seit dem 2. August in Kraft</h2>
+        <p>Seit Anfang dieser Woche gelten in der EU neue Transparenzregeln aus dem AI Act: Menschen müssen erkennen können, wenn sie mit einem KI-System interagieren oder KI-generierte Inhalte vor sich haben. Begründet wird das ausdrücklich mit dem Schutz vor Desinformation und Täuschung.</p>
+        <p>Gleichzeitig hat die Kommission eine Ausschreibung für bis zu sieben „AI Gigafactories“ gestartet, um europäische Rechenkapazität für das Training großer Modelle aufzubauen — Regulierung und Industriepolitik laufen also parallel.</p>
+        <div class="powi">
+          <span class="powi__label">PoWi-Bezug</span>
+          <p><em>Europäische Integration.</em> Paradebeispiel für die EU als Regulierungsmacht: Weil der Binnenmarkt groß genug ist, wirken EU-Standards weit über Europa hinaus („Brussels Effect“). Verknüpfbar mit der Frage nach digitaler Souveränität und mit der Rolle der Kommission im Gesetzgebungsprozess.</p>
+        </div>
+        <div class="sources">
+          <a href="https://european-union.europa.eu/news-and-events_en">Europäische Union</a>
+          <a href="https://www.wiwo.de/themen/europaeische-union">WirtschaftsWoche</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="item">
+      <div class="item__tag">Wirtschaft</div>
+      <div class="item__main">
+        <h2 class="item__head">Konjunktur: vorsichtige Erholung, getragen vom Staat</h2>
+        <p>Die Inflation liegt bei rund 1,9 Prozent und damit wieder nahe am EZB-Ziel. Das DIW erwartet für 2026 ein Wachstum von 1,0 Prozent, andere Prognosen liegen bei 0,7 bis 1,0 Prozent. Die Bundesbank sieht nach Jahren der Flaute eine allmähliche Erholung, die sich ab dem zweiten Quartal verstärkt.</p>
+        <p>Getragen wird sie vor allem von staatlichen Ausgaben und wieder anziehenden Exporten. Der private Verbrauch profitiert vom robusten Arbeitsmarkt, der Außenhandel bleibt aber schwach — wegen sinkender Wettbewerbsfähigkeit und globaler Unsicherheit. Der umstrittene Handelsdeal mit den USA, mit dem die EU einen Handelskrieg abwenden wollte, hängt weiter an der Umsetzung, auf die Präsident Trump drängt.</p>
+        <div class="powi">
+          <span class="powi__label">PoWi-Bezug</span>
+          <p><em>Wirtschaftspolitik.</em> Direkt an der Kontroverse Angebots- gegen Nachfragepolitik: Ein Aufschwung, der wesentlich von Staatsausgaben getragen wird, ist genau der keynesianische Fall — und die schwache Wettbewerbsfähigkeit genau das angebotsseitige Gegenargument. Dazu Protektionismus und die Handelspolitik als EU-Kompetenz.</p>
+        </div>
+        <div class="sources">
+          <a href="https://www.diw.de/de/diw_01.c.1002338.de/konjunkturprognose_fruehjahr_2026.html">DIW Berlin</a>
+          <a href="https://www.bundesbank.de/de/presse/pressenotizen/deutschland-prognose-der-bundesbank-wirtschaft-erholt-sich-allmaehlich-wieder-936568">Bundesbank</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="item">
+      <div class="item__tag">Deutschland</div>
+      <div class="item__main">
+        <h2 class="item__head">Bundestag setzt die Diätenerhöhung für 2026 aus</h2>
+        <p>Union und SPD haben sich auf einen Gesetzentwurf geeinigt, der die automatische Anpassung der Abgeordnetenbezüge für ein Jahr aussetzt. Weil die Nominallöhne 2025 um 4,2 Prozent gestiegen sind, wären die Diäten sonst um knapp 500 Euro auf über 12.300 Euro monatlich geklettert. Begründet wird der Schritt mit der wirtschaftlichen Lage.</p>
+        <div class="powi">
+          <span class="powi__label">PoWi-Bezug</span>
+          <p><em>Parlamentarismus.</em> Kleine Meldung, aber gut für die Frage nach dem Abgeordnetenstatus: Die automatische Kopplung an die Lohnentwicklung wurde ja gerade eingeführt, um Selbstbedienungsdebatten zu vermeiden. Sie jetzt auszusetzen, ist Symbolpolitik — die Frage ist, ob solche Gesten Vertrauen schaffen oder das Problem verschieben.</p>
+        </div>
+        <div class="sources">
+          <a href="https://www.t-online.de/nachrichten/deutschland/innenpolitik/id_101287532/wegen-wirtschaftslage-regierung-stoppt-diaetenerhoehung.html">t-online</a>
+        </div>
+      </div>
+    </article>
+
+  </main>
+
+  <section class="weekly">
+    <div class="label">Thema der Woche</div>
+    <h2 class="weekly__head">Die Septemberwahlen als Stresstest für das deutsche Parteiensystem</h2>
+    <p>Wenn du dir diese Woche ein Thema tiefer anschaust, dann dieses. Es verbindet fast alle Bereiche des Lehrplans und liefert dir ein Beispiel, das du in Klausuren bei ganz unterschiedlichen Fragen einsetzen kannst.</p>
+    <ul>
+      <li><strong>Wahl- und Parteiensystem:</strong> Was passiert mit Koalitionsbildung, wenn die stärkste Kraft von allen anderen ausgeschlossen wird? Rechne konkret durch, welche Mehrheiten in Sachsen-Anhalt überhaupt noch möglich wären.</li>
+      <li><strong>Demokratietheorie:</strong> Spannungsfeld zwischen Mehrheitsprinzip und wehrhafter Demokratie — ein Argument, das in beide Richtungen funktioniert und deshalb gut für Erörterungen taugt.</li>
+      <li><strong>Föderalismus:</strong> Über den Bundesrat wirken Landtagswahlen direkt in die Bundespolitik hinein. Verknüpfe das mit der Rentenreform, die bis Jahresende durch soll.</li>
+      <li><strong>Politische Soziologie:</strong> Die Wahlkampfthemen — Industriearbeitsplätze, Fachkräftemangel, innere Sicherheit — zeigen den Zusammenhang von wirtschaftlicher Lage und Wahlverhalten. Stichwort Cleavage-Theorie.</li>
+    </ul>
+    <p>Ein guter Einstieg sind die Länderberichte von Infratest dimap und die Wahlanalysen der Bundeszentrale für politische Bildung.</p>
+  </section>
+
+  <footer class="colophon">
+    <div>Zusammengestellt am 6. August 2026 aus öffentlich zugänglichen Quellen.</div>
+    <div>Die Einordnungen sind Lesehilfen, keine Belege — für Klausuren und Referate immer die verlinkte Primärquelle prüfen.</div>
+  </footer>
+
+</div>
