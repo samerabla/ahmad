@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Greenscreen – Hintergrund tauschen</title>
+<style>
+  :root {
+    --bg: #f3f3f1;
+    --panel: #ffffff;
+    --line: #e2e2de;
+    --text: #1d1d1b;
+    --muted: #6d6d68;
+    --accent: #2f5d50;
+    --accent-hover: #264c41;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+  button { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+
+  /* Kopfzeile */
+  header {
+    height: 56px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; }
+
+  .btn {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    cursor: pointer;
+  }
+  .btn:hover { background: #f6f6f4; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled:hover { background: var(--accent); }
+  .btn-small { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+  .btn.active { border-color: var(--accent); color: var(--accent); }
+
+  /* Layout */
+  .app { flex: 1; display: flex; min-height: 0; }
+  .stage {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  aside {
+    width: 320px;
+    flex: none;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+    padding: 20px;
+  }
+  section + section { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+  h2 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+
+  /* Vorschau */
+  #preview {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 56px - 48px);
+    box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04);
+  }
+  #preview.transparent, .tile-none {
+    background-color: #fff;
+    background-image: conic-gradient(#e4e4e0 25%, transparent 0 50%, #e4e4e0 0 75%, transparent 0);
+    background-size: 16px 16px;
+  }
+  #preview.picking { cursor: crosshair; }
+
+  .dropzone {
+    width: min(520px, 100%);
+    aspect-ratio: 4 / 3;
+    border: 1.5px dashed #c9c9c4;
+    border-radius: var(--radius);
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    cursor: pointer;
+    padding: 24px;
+  }
+  .dropzone strong { font-weight: 600; }
+  .dropzone span { color: var(--muted); }
+  .stage.over .dropzone, .bg-grid.over { border-color: var(--accent); background: #f4f8f6; }
+
+  /* Foto */
+  .photo-row { display: flex; align-items: center; gap: 12px; }
+  .photo-row img {
+    width: 56px; height: 56px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    flex: none;
+  }
+  .photo-meta { flex: 1; min-width: 0; }
+  .photo-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .photo-size { color: var(--muted); font-size: 13px; }
+
+  /* Hintergründe */
+  .bg-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    border: 1.5px solid transparent;
+    border-radius: var(--radius);
+    margin: -4px;
+    padding: 4px;
+  }
+  .tile {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    background: #fafaf8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tile-add { border-style: dashed; background: var(--panel); font-size: 20px; line-height: 1; }
+  .tile-add:hover { color: var(--text); border-color: #bdbdb8; }
+  .tile-remove {
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 20px; height: 20px;
+    border: 0;
+    border-radius: 3px;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    font-size: 13px;
+    line-height: 20px;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .tile-wrap { position: relative; }
+  .tile-wrap:hover .tile-remove, .tile-remove:focus-visible { opacity: 1; }
+
+  /* Feinabstimmung */
+  .key-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .swatch {
+    width: 28px; height: 28px;
+    border-radius: 4px;
+    border: 1px solid rgba(0,0,0,.12);
+    flex: none;
+  }
+  .key-row .label { flex: 1; }
+  .slider { margin-bottom: 14px; }
+  .slider-head { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .slider-head output { color: var(--muted); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+  fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  fieldset:disabled { opacity: .45; }
+
+  @media (max-width: 820px) {
+    html, body { height: auto; }
+    .app { flex-direction: column; }
+    .stage { flex: none; padding: 16px; }
+    #preview { max-height: 60vh; }
+    aside { width: auto; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+    .tile-remove { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Greenscreen</h1>
+  <button id="saveBtn" class="btn btn-primary" disabled>Bild speichern</button>
+</header>
+
+<div class="app">
+  <main class="stage">
+    <div id="emptyDrop" class="dropzone" role="button" tabindex="0">
+      <strong>Foto hierher ziehen</strong>
+      <span>oder klicken, um ein Greenscreen-Foto auszuwählen</span>
+    </div>
+    <canvas id="preview" hidden></canvas>
+  </main>
+
+  <aside>
+    <section>
+      <h2>1 · Foto</h2>
+      <div id="photoEmpty">
+        <button id="photoPick" class="btn">Foto auswählen</button>
+      </div>
+      <div id="photoInfo" class="photo-row" hidden>
+        <img id="photoThumb" alt="">
+        <div class="photo-meta">
+          <div id="photoName" class="photo-name"></div>
+          <div id="photoSize" class="photo-size"></div>
+        </div>
+        <button id="photoChange" class="btn btn-small">Ändern</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>2 · Hintergrund</h2>
+      <div id="bgGrid" class="bg-grid"></div>
+      <p class="hint">Eigene Bilder mit + hinzufügen oder hierher ziehen.</p>
+    </section>
+
+    <section>
+      <h2>3 · Feinabstimmung</h2>
+      <fieldset id="tuning" disabled>
+        <div class="key-row">
+          <div id="keySwatch" class="swatch"></div>
+          <div class="label">Hintergrundfarbe</div>
+          <button id="pickBtn" class="btn btn-small">Aus Bild wählen</button>
+        </div>
+        <p id="pickHint" class="hint" hidden style="margin:-8px 0 14px">Klicke im Bild auf den grünen Hintergrund.</p>
+
+        <div class="slider">
+          <div class="slider-head"><label for="tol">Toleranz</label><output id="tolOut"></output></div>
+          <input id="tol" type="range" min="0" max="80" step="1">
+        </div>
+        <div class="slider">
+          <div class="slider-head"><label for="soft">Weiche Kante</label><output id="softOut"></output></div>
+          <input id="soft" type="range" min="0" max="60" step="1">
+        </div>
+        <div class="slider">
+          <div class="slider-head"><label for="spill">Grünstich entfernen</label><output id="spillOut"></output></div>
+          <input id="spill" type="range" min="0" max="100" step="1">
+        </div>
+
+        <button id="resetBtn" class="btn btn-small">Zurücksetzen</button>
+      </fieldset>
+    </section>
+  </aside>
+</div>
+
+<input id="photoInput" type="file" accept="image/*" hidden>
+<input id="bgInput" type="file" accept="image/*" multiple hidden>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (sel) => document.querySelector(sel);
+
+  const PREVIEW_MAX = 1600;   // Kantenlänge der Vorschau
+  const EXPORT_MAX = 8000;    // Obergrenze beim Speichern (Browser-Limits)
+  const DEFAULT_KEY = [0, 177, 64];
+  const DEFAULTS = { tol: 35, soft: 25, spill: 60 };
+
+  const state = {
+    photo: null,
+    photoUrl: null,
+    photoName: '',
+    src: null,                 // ImageData in Vorschaugröße
+    keyed: document.createElement('canvas'),
+    backgrounds: [],           // { id, url, img, name }
+    bgId: null,
+    key: DEFAULT_KEY.slice(),
+    tol: DEFAULTS.tol,
+    soft: DEFAULTS.soft,
+    spill: DEFAULTS.spill,
+    picking: false,
+  };
+  let nextBgId = 1;
+  let frame = 0;
+  let needsKey = true;
+
+  const preview = $('#preview');
+  const previewCtx = preview.getContext('2d');
+
+  /* ---------- Hilfsfunktionen ---------- */
+
+  const isImage = (file) => file && file.type.startsWith('image/');
+
+  function makeCanvas(w, h) {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return c;
+  }
+
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve({ img, url });
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error(`„${file.name}“ konnte nicht geöffnet werden.`));
+      };
+      img.src = url;
+    });
+  }
+
+  function fitSize(w, h, max) {
+    const s = Math.min(1, max / Math.max(w, h));
+    return [Math.round(w * s), Math.round(h * s)];
+  }
+
+  function readPixels(img, w, h) {
+    const ctx = makeCanvas(w, h).getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h);
+  }
+
+  function drawCover(ctx, img, w, h) {
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    const s = Math.max(w / iw, h / ih);
+    const dw = iw * s, dh = ih * s;
+    ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  }
+
+  /* ---------- Greenscreen-Verarbeitung ---------- */
+
+  // Schätzt die Farbe des Greenscreens anhand der grünlichen Pixel am Bildrand.
+  function detectKey(src) {
+    const { width: w, height: h, data } = src;
+    const band = Math.max(2, Math.round(Math.min(w, h) * 0.04));
+    let r = 0, g = 0, b = 0, n = 0;
+    const take = (x, y) => {
+      const i = (y * w + x) * 4;
+      const pr = data[i], pg = data[i + 1], pb = data[i + 2];
+      if (pg > pr + 20 && pg > pb + 20) { r += pr; g += pg; b += pb; n++; }
+    };
+    for (let y = 0; y < h; y += 2) {
+      for (let x = 0; x < w; x += 2) {
+        if (x < band || x >= w - band || y < band || y >= h - band) take(x, y);
+      }
+    }
+    return n < 50 ? DEFAULT_KEY.slice() : [r / n, g / n, b / n].map(Math.round);
+  }
+
+  // Farbabstand im helligkeitsnormierten CbCr-Raum: Schatten auf dem
+  // Greenscreen werden so genauso erkannt wie hell ausgeleuchtete Stellen.
+  function chroma(r, g, b) {
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    const n = 1 / Math.max(y, 40);
+    return [
+      (-0.168736 * r - 0.331264 * g + 0.5 * b) * n,
+      (0.5 * r - 0.418688 * g - 0.081312 * b) * n,
+    ];
+  }
+
+  function keyImage(src, p) {
+    const { width: w, height: h } = src;
+    const out = new ImageData(w, h);
+    const s = src.data, o = out.data;
+    const [kCb, kCr] = chroma(p.key[0], p.key[1], p.key[2]);
+    const mag = Math.hypot(kCb, kCr) || 1;
+    const t0 = (p.tol / 100) * mag;
+    const t1 = t0 + Math.max((p.soft / 100) * mag, 1e-4);
+    const inv = 1 / (t1 - t0);
+    const spill = p.spill / 100;
+
+    // 1. Maske: Abstand jedes Pixels zur Hintergrundfarbe.
+    let alpha = new Float32Array(w * h);
+    for (let i = 0, j = 0; j < alpha.length; i += 4, j++) {
+      const r = s[i], g = s[i + 1], b = s[i + 2];
+      const y = 0.299 * r + 0.587 * g + 0.114 * b;
+      const n = 1 / Math.max(y, 40);
+      const dCb = (-0.168736 * r - 0.331264 * g + 0.5 * b) * n - kCb;
+      const dCr = (0.5 * r - 0.418688 * g - 0.081312 * b) * n - kCr;
+      const d = Math.sqrt(dCb * dCb + dCr * dCr);
+      if (d <= t0) alpha[j] = 0;
+      else if (d >= t1) alpha[j] = 1;
+      else { const x = (d - t0) * inv; alpha[j] = x * x * (3 - 2 * x); }
+    }
+
+    // 2. Kante leicht einziehen und glätten: entfernt den Saum aus
+    //    Mischpixeln (halb Person, halb Grün). Radius wächst mit der Bildgröße.
+    const radius = Math.max(1, Math.round(Math.max(w, h) / PREVIEW_MAX));
+    alpha = filterAlpha(alpha, w, h, radius, Math.min);
+    alpha = filterAlpha(alpha, w, h, radius, null);
+
+    // 3. Farben übernehmen und Grünstich entfernen; an halbtransparenten
+    //    Kanten immer voll, damit kein grüner Schimmer bleibt.
+    for (let i = 0, j = 0; j < alpha.length; i += 4, j++) {
+      const r = s[i], g = s[i + 1], b = s[i + 2];
+      const a = alpha[j];
+      let ng = g;
+      const limit = r > b ? r : b;
+      if (g > limit) ng = g - (g - limit) * (spill + (1 - spill) * (1 - a));
+      o[i] = r;
+      o[i + 1] = ng;
+      o[i + 2] = b;
+      o[i + 3] = a * s[i + 3];
+    }
+    return out;
+  }
+
+  // Separabler Filter auf der Maske: op = Math.min (Einziehen) oder null (Mittelwert).
+  function filterAlpha(src, w, h, r, op) {
+    const tmp = new Float32Array(src.length);
+    const dst = new Float32Array(src.length);
+    const pass = (from, to, len, count, stride, step) => {
+      for (let line = 0; line < count; line++) {
+        const base = line * stride;
+        for (let x = 0; x < len; x++) {
+          let acc = op ? 1 : 0, n = 0;
+          for (let k = Math.max(0, x - r); k <= Math.min(len - 1, x + r); k++) {
+            const v = from[base + k * step];
+            if (op) { if (v < acc) acc = v; } else { acc += v; n++; }
+          }
+          to[base + x * step] = op ? acc : acc / n;
+        }
+      }
+    };
+    pass(src, tmp, w, h, w, 1);   // horizontal
+    pass(tmp, dst, h, w, 1, w);   // vertikal
+    return dst;
+  }
+
+  function composite(ctx, w, h, fgCanvas) {
+    ctx.clearRect(0, 0, w, h);
+    const bg = currentBg();
+    if (bg) drawCover(ctx, bg.img, w, h);
+    ctx.drawImage(fgCanvas, 0, 0, w, h);
+  }
+
+  /* ---------- Darstellung ---------- */
+
+  const currentBg = () => state.backgrounds.find((b) => b.id === state.bgId) || null;
+
+  function scheduleRender(rekey = true) {
+    if (rekey) needsKey = true;
+    if (!frame) frame = requestAnimationFrame(render);
+  }
+
+  function render() {
+    frame = 0;
+    if (!state.src) return;
+    const { width: w, height: h } = state.src;
+    if (needsKey) {
+      state.keyed.width = w;
+      state.keyed.height = h;
+      state.keyed.getContext('2d').putImageData(keyImage(state.src, state), 0, 0);
+      needsKey = false;
+    }
+    if (preview.width !== w || preview.height !== h) {
+      preview.width = w;
+      preview.height = h;
+    }
+    composite(previewCtx, w, h, state.keyed);
+    preview.classList.toggle('transparent', !currentBg());
+  }
+
+  function updatePhotoUI() {
+    const has = !!state.photo;
+    $('#emptyDrop').hidden = has;
+    preview.hidden = !has;
+    $('#photoEmpty').hidden = has;
+    $('#photoInfo').hidden = !has;
+    $('#tuning').disabled = !has;
+    $('#saveBtn').disabled = !has;
+    if (has) {
+      $('#photoThumb').src = state.photoUrl;
+      $('#photoName').textContent = state.photoName;
+      $('#photoSize').textContent = `${state.photo.naturalWidth} × ${state.photo.naturalHeight} px`;
+    }
+  }
+
+  function updateTuningUI() {
+    for (const k of ['tol', 'soft', 'spill']) {
+      $('#' + k).value = state[k];
+      $('#' + k + 'Out').textContent = state[k] + ' %';
+    }
+    $('#keySwatch').style.background = `rgb(${state.key.join(',')})`;
+  }
+
+  function renderBgGrid() {
+    const grid = $('#bgGrid');
+    grid.replaceChildren();
+
+    const none = document.createElement('button');
+    none.className = 'tile tile-none' + (state.bgId === null ? ' selected' : '');
+    none.textContent = 'Ohne';
+    none.title = 'Transparenter Hintergrund';
+    none.addEventListener('click', () => selectBg(null));
+    grid.append(none);
+
+    for (const bg of state.backgrounds) {
+      const wrap = document.createElement('div');
+      wrap.className = 'tile-wrap';
+
+      const tile = document.createElement('button');
+      tile.className = 'tile' + (bg.id === state.bgId ? ' selected' : '');
+      tile.title = bg.name;
+      const img = document.createElement('img');
+      img.src = bg.url;
+      img.alt = bg.name;
+      tile.append(img);
+      tile.addEventListener('click', () => selectBg(bg.id));
+
+      const remove = document.createElement('button');
+      remove.className = 'tile-remove';
+      remove.textContent = '×';
+      remove.title = 'Entfernen';
+      remove.setAttribute('aria-label', `${bg.name} entfernen`);
+      remove.addEventListener('click', () => removeBg(bg.id));
+
+      wrap.append(tile, remove);
+      grid.append(wrap);
+    }
+
+    const add = document.createElement('button');
+    add.className = 'tile tile-add';
+    add.textContent = '+';
+    add.title = 'Hintergrund hinzufügen';
+    add.setAttribute('aria-label', 'Hintergrund hinzufügen');
+    add.addEventListener('click', () => $('#bgInput').click());
+    grid.append(add);
+  }
+
+  /* ---------- Aktionen ---------- */
+
+  async function setPhoto(file) {
+    if (!isImage(file)) return;
+    let loaded;
+    try { loaded = await loadImage(file); } catch (e) { alert(e.message); return; }
+    if (state.photoUrl) URL.revokeObjectURL(state.photoUrl);
+    state.photo = loaded.img;
+    state.photoUrl = loaded.url;
+    state.photoName = file.name;
+    const [w, h] = fitSize(loaded.img.naturalWidth, loaded.img.naturalHeight, PREVIEW_MAX);
+    state.src = readPixels(loaded.img, w, h);
+    state.key = detectKey(state.src);
+    setPicking(false);
+    updatePhotoUI();
+    updateTuningUI();
+    scheduleRender();
+  }
+
+  async function addBackgrounds(files) {
+    let firstNew = null;
+    for (const file of files) {
+      if (!isImage(file)) continue;
+      try {
+        const { img, url } = await loadImage(file);
+        const bg = { id: nextBgId++, img, url, name: file.name };
+        state.backgrounds.push(bg);
+        if (firstNew === null) firstNew = bg.id;
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+    if (firstNew !== null) state.bgId = firstNew;
+    renderBgGrid();
+    scheduleRender(false);
+  }
+
+  function selectBg(id) {
+    state.bgId = id;
+    renderBgGrid();
+    scheduleRender(false);
+  }
+
+  function removeBg(id) {
+    const i = state.backgrounds.findIndex((b) => b.id === id);
+    if (i < 0) return;
+    URL.revokeObjectURL(state.backgrounds[i].url);
+    state.backgrounds.splice(i, 1);
+    if (state.bgId === id) state.bgId = null;
+    renderBgGrid();
+    scheduleRender(false);
+  }
+
+  function setPicking(on) {
+    state.picking = on;
+    preview.classList.toggle('picking', on);
+    $('#pickBtn').classList.toggle('active', on);
+    $('#pickHint').hidden = !on;
+  }
+
+  function pickColor(e) {
+    const rect = preview.getBoundingClientRect();
+    const { width: w, height: h, data } = state.src;
+    const cx = Math.floor(((e.clientX - rect.left) / rect.width) * w);
+    const cy = Math.floor(((e.clientY - rect.top) / rect.height) * h);
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let y = cy - 2; y <= cy + 2; y++) {
+      for (let x = cx - 2; x <= cx + 2; x++) {
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const i = (y * w + x) * 4;
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+      }
+    }
+    if (!n) return;
+    state.key = [r / n, g / n, b / n].map(Math.round);
+    setPicking(false);
+    updateTuningUI();
+    scheduleRender();
+  }
+
+  async function save() {
+    if (!state.photo) return;
+    const btn = $('#saveBtn');
+    btn.disabled = true;
+    btn.textContent = 'Wird gespeichert …';
+    await new Promise((r) => setTimeout(r, 30)); // UI kurz aktualisieren lassen
+
+    try {
+      const [w, h] = fitSize(state.photo.naturalWidth, state.photo.naturalHeight, EXPORT_MAX);
+      const fg = makeCanvas(w, h);
+      fg.getContext('2d').putImageData(keyImage(readPixels(state.photo, w, h), state), 0, 0);
+
+      const out = makeCanvas(w, h);
+      composite(out.getContext('2d'), w, h, fg);
+
+      const hasBg = !!currentBg();
+      const type = hasBg ? 'image/jpeg' : 'image/png';
+      const blob = await new Promise((r) => out.toBlob(r, type, 0.92));
+      if (!blob) throw new Error('Das Bild konnte nicht erstellt werden.');
+
+      const base = state.photoName.replace(/\.[^.]+$/, '') || 'bild';
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${base}-neuer-hintergrund.${hasBg ? 'jpg' : 'png'}`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Bild speichern';
+    }
+  }
+
+  /* ---------- Ereignisse ---------- */
+
+  const openPhotoDialog = () => $('#photoInput').click();
+  $('#emptyDrop').addEventListener('click', openPhotoDialog);
+  $('#emptyDrop').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPhotoDialog(); }
+  });
+  $('#photoPick').addEventListener('click', openPhotoDialog);
+  $('#photoChange').addEventListener('click', openPhotoDialog);
+
+  $('#photoInput').addEventListener('change', (e) => {
+    setPhoto(e.target.files[0]);
+    e.target.value = '';
+  });
+  $('#bgInput').addEventListener('change', (e) => {
+    addBackgrounds([...e.target.files]);
+    e.target.value = '';
+  });
+
+  for (const k of ['tol', 'soft', 'spill']) {
+    $('#' + k).addEventListener('input', (e) => {
+      state[k] = Number(e.target.value);
+      $('#' + k + 'Out').textContent = state[k] + ' %';
+      scheduleRender();
+    });
+  }
+
+  $('#pickBtn').addEventListener('click', () => setPicking(!state.picking));
+  preview.addEventListener('click', (e) => { if (state.picking) pickColor(e); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setPicking(false); });
+
+  $('#resetBtn').addEventListener('click', () => {
+    Object.assign(state, DEFAULTS);
+    if (state.src) state.key = detectKey(state.src);
+    updateTuningUI();
+    scheduleRender();
+  });
+
+  $('#saveBtn').addEventListener('click', save);
+
+  // Drag & Drop: Fotos auf die Vorschau, Hintergründe auf die Hintergrund-Liste.
+  function dropTarget(el, onFiles) {
+    el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('over'); });
+    el.addEventListener('dragleave', (e) => {
+      if (!el.contains(e.relatedTarget)) el.classList.remove('over');
+    });
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove('over');
+      onFiles([...e.dataTransfer.files].filter(isImage));
+    });
+  }
+  dropTarget($('.stage'), (files) => files[0] && setPhoto(files[0]));
+  dropTarget($('#bgGrid'), addBackgrounds);
+  // Verhindert, dass der Browser die Datei woanders im Fenster einfach öffnet.
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+
+  updatePhotoUI();
+  updateTuningUI();
+  renderBgGrid();
+})();
+</script>
+</body>
+</html>
