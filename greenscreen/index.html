@@ -487,11 +487,12 @@
     const logo = $('#brandLogo');
     if (!logo.complete || !logo.naturalWidth) return;
     const unit = Math.min(w, h);
-    const logoW = unit * 0.16;
+    // Nie größer als die Originalauflösung des Logos zeichnen, sonst wird es unscharf.
+    const logoW = Math.min(unit * 0.16, logo.naturalWidth);
     const logoH = logoW * logo.naturalHeight / logo.naturalWidth;
     const pad = logoW * 0.08;
-    const font = (size) => `500 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
-    let fontSize = logoW * 0.075;
+    const font = (size) => `600 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    let fontSize = logoW * 0.085;
     ctx.save();
     ctx.font = font(fontSize);
     const textW = ctx.measureText(BADGE_TEXT).width;
@@ -503,7 +504,7 @@
     const x = w - margin - boxW;
     const y = h - margin - boxH;
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.beginPath();
     if (ctx.roundRect) ctx.roundRect(x, y, boxW, boxH, pad * 0.5);
     else ctx.rect(x, y, boxW, boxH);
@@ -512,7 +513,7 @@
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(logo, x + pad, y + pad, logoW, logoH);
 
-    ctx.fillStyle = '#5a5a56';
+    ctx.fillStyle = '#3a3a37';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(BADGE_TEXT, x + boxW / 2, y + pad + logoH + gap + fontSize * 0.8);
