@@ -231,7 +231,7 @@
     <div class="brand-sep"></div>
     <h1>Greenscreen<span>Tag der offenen Tür</span></h1>
   </div>
-  <button id="saveBtn" class="btn btn-primary" disabled>Bild speichern</button>
+  <button id="saveBtn" class="btn btn-primary" disabled>Speichern / Senden</button>
 </header>
 
 <div class="app">
@@ -310,6 +310,7 @@
   const DEFAULT_KEY = [0, 177, 64];
   const DEFAULTS = { tol: 35, soft: 25, spill: 60 };
   const BADGE_TEXT = 'Tag der offenen Tür 2026';
+  const SHARE_TEXT = 'Dein Foto vom Tag der offenen Tür an der Elly-Heuss-Schule Wiesbaden.';
 
   const state = {
     photo: null,
@@ -531,7 +532,9 @@
 
   // Auf claude.ai laufen Seiten in einem geschützten Rahmen, der normale
   // Downloads blockiert. Dort wird über die Speichern-Funktion der Seite
-  // gespeichert (auf iPad/iPhone mit „In Fotos sichern“), sonst normal.
+  // gespeichert; auf iPad/iPhone öffnet sie das Teilen-Menü (Mail, Fotos …).
+  // Im normalen Browser öffnet sich das Teilen-Menü direkt, wenn es das gibt,
+  // sonst wird die Datei heruntergeladen.
   async function offerFile(blob, filename) {
     const api = window.claude && typeof window.claude.use === 'function'
       ? await window.claude.use('downloads').catch(() => null)
@@ -543,6 +546,16 @@
       } catch (e) {
         if (e && e.code === 'declined') return false;
         throw new Error('Speichern ist hier leider nicht möglich.');
+      }
+    }
+    const file = new File([blob], filename, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], text: SHARE_TEXT });
+        return true;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return false;
+        // Teilen fehlgeschlagen: unten normal herunterladen.
       }
     }
     const a = document.createElement('a');
@@ -733,7 +746,7 @@
     if (!state.photo) return;
     const btn = $('#saveBtn');
     btn.disabled = true;
-    btn.textContent = 'Wird gespeichert …';
+    btn.textContent = 'Einen Moment …';
     await new Promise((r) => setTimeout(r, 30)); // UI kurz aktualisieren lassen
 
     try {
@@ -755,7 +768,7 @@
       showMessage(e.message);
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Bild speichern';
+      btn.textContent = 'Speichern / Senden';
     }
   }
 
