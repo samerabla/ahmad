@@ -192,6 +192,20 @@
   fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   fieldset:disabled { opacity: .45; }
 
+  .message {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    max-width: calc(100% - 32px);
+    background: #2b2b29;
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0,0,0,.15);
+    z-index: 10;
+  }
+
   @media (max-width: 820px) {
     html, body { height: auto; }
     .app { flex-direction: column; }
@@ -268,6 +282,8 @@
     </section>
   </aside>
 </div>
+
+<div id="message" class="message" role="status" hidden></div>
 
 <input id="photoInput" type="file" accept="image/*" hidden>
 <input id="bgInput" type="file" accept="image/*" multiple hidden>
@@ -453,6 +469,41 @@
     ctx.drawImage(fgCanvas, 0, 0, w, h);
   }
 
+  let messageTimer = 0;
+  function showMessage(text) {
+    const el = $('#message');
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(messageTimer);
+    messageTimer = setTimeout(() => { el.hidden = true; }, 5000);
+  }
+
+  // Auf claude.ai laufen Seiten in einem geschützten Rahmen, der normale
+  // Downloads blockiert. Dort wird über die Speichern-Funktion der Seite
+  // gespeichert (auf iPad/iPhone mit „In Fotos sichern“), sonst normal.
+  async function offerFile(blob, filename) {
+    const api = window.claude && typeof window.claude.use === 'function'
+      ? await window.claude.use('downloads').catch(() => null)
+      : null;
+    if (api) {
+      try {
+        await api.save({ filename, data: blob });
+        return true;
+      } catch (e) {
+        if (e && e.code === 'declined') return false;
+        throw new Error('Speichern ist hier leider nicht möglich.');
+      }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return true;
+  }
+
   /* ---------- Darstellung ---------- */
 
   const currentBg = () => state.backgrounds.find((b) => b.id === state.bgId) || null;
@@ -552,7 +603,7 @@
   async function setPhoto(file) {
     if (!isImage(file)) return;
     let loaded;
-    try { loaded = await loadImage(file); } catch (e) { alert(e.message); return; }
+    try { loaded = await loadImage(file); } catch (e) { showMessage(e.message); return; }
     if (state.photoUrl) URL.revokeObjectURL(state.photoUrl);
     state.photo = loaded.img;
     state.photoUrl = loaded.url;
@@ -576,7 +627,7 @@
         state.backgrounds.push(bg);
         if (firstNew === null) firstNew = bg.id;
       } catch (e) {
-        alert(e.message);
+        showMessage(e.message);
       }
     }
     if (firstNew !== null) state.bgId = firstNew;
@@ -648,15 +699,9 @@
       if (!blob) throw new Error('Das Bild konnte nicht erstellt werden.');
 
       const base = state.photoName.replace(/\.[^.]+$/, '') || 'bild';
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${base}-neuer-hintergrund.${hasBg ? 'jpg' : 'png'}`;
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      await offerFile(blob, `${base}-neuer-hintergrund.${hasBg ? 'jpg' : 'png'}`);
     } catch (e) {
-      alert(e.message);
+      showMessage(e.message);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Bild speichern';
