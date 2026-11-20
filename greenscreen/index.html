@@ -58,6 +58,17 @@
   .btn-primary:disabled:hover { background: var(--accent); }
   .btn-small { padding: 4px 10px; font-size: 13px; white-space: nowrap; }
   .btn.active { border-color: var(--accent); color: var(--accent); }
+  .btn-large { padding: 11px 24px; font-size: 15px; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .link {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 
   /* Layout */
   .app { flex: 1; display: flex; min-height: 0; }
@@ -101,7 +112,7 @@
   #preview {
     display: block;
     max-width: 100%;
-    max-height: calc(100vh - 64px - 48px);
+    max-height: calc(100vh - 64px - 48px - 62px);
     box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.04);
   }
   #preview.transparent, .tile-none {
@@ -110,6 +121,24 @@
     background-size: 16px 16px;
   }
   #preview.picking { cursor: crosshair; }
+  #preview.flash { animation: flash .4s ease-out; }
+  @keyframes flash { from { filter: brightness(1.9); } }
+
+  .view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    max-width: 100%;
+  }
+  .stage-actions { display: flex; gap: 8px; min-height: 48px; }
+  .offscreen {
+    position: fixed;
+    left: 0; top: 0;
+    width: 1px; height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
 
   .dropzone {
     width: min(520px, 100%);
@@ -121,17 +150,23 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 14px;
     text-align: center;
-    cursor: pointer;
     padding: 24px;
   }
-  .dropzone strong { font-weight: 600; }
   .dropzone span { color: var(--muted); }
   .stage.over .dropzone, .bg-grid.over { border-color: var(--accent); background: #f2f7fb; }
 
   /* Foto */
-  .photo-row { display: flex; align-items: center; gap: 12px; }
+  .photo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .live-status { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+  .live-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #d23c3c;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: .3; } }
   .photo-row img {
     width: 56px; height: 56px;
     object-fit: cover;
@@ -226,6 +261,7 @@
     #preview { max-height: 60vh; }
     aside { width: auto; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
     .tile-remove { opacity: 1; }
+    .bg-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
   }
   @media (max-width: 520px) {
     .brand-sep, h1 { display: none; }
@@ -245,26 +281,34 @@
 
 <div class="app">
   <main class="stage">
-    <div id="emptyDrop" class="dropzone" role="button" tabindex="0">
-      <strong>Foto hierher ziehen</strong>
-      <span>oder klicken, um ein Greenscreen-Foto auszuwählen</span>
+    <div id="emptyDrop" class="dropzone">
+      <button id="cameraStart" class="btn btn-primary btn-large">Kamera starten</button>
+      <span>oder ein Foto <button id="emptyPick" class="link" type="button">auswählen</button> bzw. hierher ziehen</span>
     </div>
-    <canvas id="preview" hidden></canvas>
+    <div id="view" class="view" hidden>
+      <canvas id="preview"></canvas>
+      <div class="stage-actions">
+        <button id="shutterBtn" class="btn btn-primary btn-large" hidden>Foto aufnehmen</button>
+        <button id="retakeBtn" class="btn btn-large" hidden>Neues Foto aufnehmen</button>
+      </div>
+    </div>
+    <video id="video" class="offscreen" playsinline muted></video>
   </main>
 
   <aside>
     <section>
       <h2>1 · Foto</h2>
-      <div id="photoEmpty">
-        <button id="photoPick" class="btn">Foto auswählen</button>
-      </div>
       <div id="photoInfo" class="photo-row" hidden>
         <img id="photoThumb" alt="">
         <div class="photo-meta">
           <div id="photoName" class="photo-name"></div>
           <div id="photoSize" class="photo-size"></div>
         </div>
-        <button id="photoChange" class="btn btn-small">Ändern</button>
+      </div>
+      <p id="liveInfo" class="live-status" hidden><span class="live-dot"></span>Kamera läuft</p>
+      <div class="btn-row">
+        <button id="cameraBtn" class="btn">Kamera starten</button>
+        <button id="photoPick" class="btn">Foto auswählen</button>
       </div>
     </section>
 
@@ -282,7 +326,7 @@
           <div class="label">Hintergrundfarbe</div>
           <button id="pickBtn" class="btn btn-small">Aus Bild wählen</button>
         </div>
-        <p id="pickHint" class="hint" hidden style="margin:-8px 0 14px">Klicke im Bild auf den grünen Hintergrund.</p>
+        <p id="pickHint" class="hint" hidden style="margin:-8px 0 14px">Tippe im Bild auf den grünen Hintergrund.</p>
 
         <div class="slider">
           <div class="slider-head"><label for="tol">Toleranz</label><output id="tolOut"></output></div>
@@ -317,6 +361,7 @@
   const $ = (sel) => document.querySelector(sel);
 
   const PREVIEW_MAX = 1600;   // Kantenlänge der Vorschau
+  const LIVE_MAX = 1280;      // Kantenlänge der Live-Vorschau
   const EXPORT_MAX = 8000;    // Obergrenze beim Speichern (Browser-Limits)
   const DEFAULT_KEY = [0, 177, 64];
   const DEFAULTS = { tol: 35, soft: 25, spill: 60 };
@@ -336,7 +381,12 @@
     soft: DEFAULTS.soft,
     spill: DEFAULTS.spill,
     picking: false,
+    mode: 'empty',             // 'empty' | 'live' | 'photo'
   };
+  const video = $('#video');
+  let stream = null;
+  let liveFrame = 0;
+  let gl;                      // WebGL-Kontext der Live-Vorschau (false = nicht verfügbar)
   let nextBgId = 1;
   let frame = 0;
   let needsKey = true;
@@ -417,16 +467,21 @@
     ];
   }
 
-  function keyImage(src, p) {
-    const { width: w, height: h } = src;
-    const out = new ImageData(w, h);
-    const s = src.data, o = out.data;
+  // Schwellwerte aus Hintergrundfarbe und Reglern (für Foto und Live-Vorschau).
+  function keyParams(p) {
     const [kCb, kCr] = chroma(p.key[0], p.key[1], p.key[2]);
     const mag = Math.hypot(kCb, kCr) || 1;
     const t0 = (p.tol / 100) * mag;
     const t1 = t0 + Math.max((p.soft / 100) * mag, 1e-4);
+    return { kCb, kCr, t0, t1, spill: p.spill / 100 };
+  }
+
+  function keyImage(src, p) {
+    const { width: w, height: h } = src;
+    const out = new ImageData(w, h);
+    const s = src.data, o = out.data;
+    const { kCb, kCr, t0, t1, spill } = keyParams(p);
     const inv = 1 / (t1 - t0);
-    const spill = p.spill / 100;
 
     // 1. Maske: Abstand jedes Pixels zur Hintergrundfarbe.
     let alpha = new Float32Array(w * h);
@@ -579,6 +634,200 @@
     return true;
   }
 
+  /* ---------- Live-Kamera ---------- */
+
+  // Gleiches Verfahren wie keyImage, aber auf der Grafikkarte, damit die
+  // Live-Vorschau auch auf dem iPad flüssig läuft.
+  const FRAGMENT_SHADER = `
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+    precision highp float;
+    #else
+    precision mediump float;
+    #endif
+    uniform sampler2D u_tex;
+    uniform vec2 u_px, u_key;
+    uniform float u_t0, u_t1, u_spill;
+    varying vec2 v_uv;
+
+    vec2 chroma(vec3 c) {
+      c *= 255.0;
+      float n = 1.0 / max(dot(c, vec3(0.299, 0.587, 0.114)), 40.0);
+      return vec2(-0.168736 * c.r - 0.331264 * c.g + 0.5 * c.b,
+                  0.5 * c.r - 0.418688 * c.g - 0.081312 * c.b) * n;
+    }
+    float alphaAt(vec2 uv) {
+      return smoothstep(u_t0, u_t1, distance(chroma(texture2D(u_tex, uv).rgb), u_key));
+    }
+    void main() {
+      // Kante einziehen (Minimum) und glätten (Mittelwert) wie beim Foto.
+      float lo = 1.0, sum = 0.0;
+      for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++) {
+          float v = alphaAt(v_uv + vec2(float(dx), float(dy)) * u_px);
+          lo = min(lo, v);
+          sum += v;
+        }
+      float a = mix(lo, sum / 9.0, 0.5);
+      vec3 c = texture2D(u_tex, v_uv).rgb;
+      float limit = max(c.r, c.b);
+      if (c.g > limit) c.g -= (c.g - limit) * (u_spill + (1.0 - u_spill) * (1.0 - a));
+      gl_FragColor = vec4(c * a, a);
+    }`;
+  const VERTEX_SHADER = `
+    attribute vec2 a_pos;
+    varying vec2 v_uv;
+    void main() {
+      v_uv = (a_pos + 1.0) * 0.5;
+      gl_Position = vec4(a_pos, 0.0, 1.0);
+    }`;
+
+  function initGL() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('webgl', { premultipliedAlpha: true, preserveDrawingBuffer: true });
+    if (!ctx) return false;
+    const shader = (type, src) => {
+      const sh = ctx.createShader(type);
+      ctx.shaderSource(sh, src);
+      ctx.compileShader(sh);
+      return ctx.getShaderParameter(sh, ctx.COMPILE_STATUS) ? sh : null;
+    };
+    const vs = shader(ctx.VERTEX_SHADER, VERTEX_SHADER);
+    const fs = shader(ctx.FRAGMENT_SHADER, FRAGMENT_SHADER);
+    if (!vs || !fs) return false;
+    const prog = ctx.createProgram();
+    ctx.attachShader(prog, vs);
+    ctx.attachShader(prog, fs);
+    ctx.linkProgram(prog);
+    if (!ctx.getProgramParameter(prog, ctx.LINK_STATUS)) return false;
+    ctx.useProgram(prog);
+
+    ctx.bindBuffer(ctx.ARRAY_BUFFER, ctx.createBuffer());
+    ctx.bufferData(ctx.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), ctx.STATIC_DRAW);
+    const aPos = ctx.getAttribLocation(prog, 'a_pos');
+    ctx.enableVertexAttribArray(aPos);
+    ctx.vertexAttribPointer(aPos, 2, ctx.FLOAT, false, 0, 0);
+
+    ctx.bindTexture(ctx.TEXTURE_2D, ctx.createTexture());
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_S, ctx.CLAMP_TO_EDGE);
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_WRAP_T, ctx.CLAMP_TO_EDGE);
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MIN_FILTER, ctx.LINEAR);
+    ctx.texParameteri(ctx.TEXTURE_2D, ctx.TEXTURE_MAG_FILTER, ctx.LINEAR);
+    ctx.pixelStorei(ctx.UNPACK_FLIP_Y_WEBGL, true);
+
+    const loc = {};
+    for (const name of ['u_px', 'u_key', 'u_t0', 'u_t1', 'u_spill']) loc[name] = ctx.getUniformLocation(prog, name);
+    return { canvas, ctx, loc };
+  }
+
+  // Liefert ein Canvas mit der freigestellten Person aus dem aktuellen Kamerabild.
+  function keyVideo(w, h) {
+    if (gl === undefined) gl = initGL();
+    if (!gl) {
+      // Ohne WebGL: gleiches Verfahren auf dem Prozessor, in kleinerer Auflösung.
+      const [cw, ch] = fitSize(w, h, 640);
+      state.keyed.width = cw;
+      state.keyed.height = ch;
+      state.keyed.getContext('2d').putImageData(keyImage(readPixels(video, cw, ch), state), 0, 0);
+      return state.keyed;
+    }
+    const { canvas, ctx, loc } = gl;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      ctx.viewport(0, 0, w, h);
+    }
+    ctx.texImage2D(ctx.TEXTURE_2D, 0, ctx.RGBA, ctx.RGBA, ctx.UNSIGNED_BYTE, video);
+    const k = keyParams(state);
+    ctx.uniform2f(loc.u_px, 1 / w, 1 / h);
+    ctx.uniform2f(loc.u_key, k.kCb, k.kCr);
+    ctx.uniform1f(loc.u_t0, k.t0);
+    ctx.uniform1f(loc.u_t1, k.t1);
+    ctx.uniform1f(loc.u_spill, k.spill);
+    ctx.clearColor(0, 0, 0, 0);
+    ctx.clear(ctx.COLOR_BUFFER_BIT);
+    ctx.drawArrays(ctx.TRIANGLE_STRIP, 0, 4);
+    return canvas;
+  }
+
+  function renderLive() {
+    liveFrame = requestAnimationFrame(renderLive);
+    if (video.readyState < 2 || !video.videoWidth) return;
+    const [w, h] = fitSize(video.videoWidth, video.videoHeight, LIVE_MAX);
+    if (preview.width !== w || preview.height !== h) {
+      preview.width = w;
+      preview.height = h;
+    }
+    composite(previewCtx, w, h, keyVideo(w, h));
+    preview.classList.toggle('transparent', !currentBg());
+  }
+
+  const grabFrame = (max) => readPixels(video, ...fitSize(video.videoWidth, video.videoHeight, max));
+
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showMessage('Die Kamera ist hier nicht verfügbar. Öffne das Programm über https, z. B. über GitHub Pages.');
+      return;
+    }
+    try {
+      const track = stream && stream.getVideoTracks()[0];
+      if (!track || track.readyState !== 'live') {
+        stopCamera();
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        });
+        video.srcObject = stream;
+      }
+      await video.play();
+    } catch (e) {
+      stopCamera();
+      showMessage(e && e.name === 'NotAllowedError'
+        ? 'Kein Zugriff auf die Kamera. Bitte den Kamerazugriff für diese Seite erlauben.'
+        : 'Die Kamera konnte nicht gestartet werden.');
+      return;
+    }
+    state.mode = 'live';
+    setPicking(false);
+    updateUI();
+    cancelAnimationFrame(liveFrame);
+    renderLive();
+    // Grünton erkennen, sobald die Kamera ein stabiles Bild liefert.
+    setTimeout(() => {
+      if (state.mode !== 'live' || !video.videoWidth) return;
+      state.key = detectKey(grabFrame(320));
+      updateTuningUI();
+    }, 800);
+  }
+
+  function pauseCamera() {
+    cancelAnimationFrame(liveFrame);
+    liveFrame = 0;
+    video.pause();
+  }
+
+  function stopCamera() {
+    pauseCamera();
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    video.srcObject = null;
+  }
+
+  async function capture() {
+    if (state.mode !== 'live' || !video.videoWidth) return;
+    const c = makeCanvas(video.videoWidth, video.videoHeight);
+    c.getContext('2d').drawImage(video, 0, 0);
+    pauseCamera();
+    preview.classList.remove('flash');
+    void preview.offsetWidth; // Animation neu starten
+    preview.classList.add('flash');
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.95));
+    if (!blob) { showMessage('Das Foto konnte nicht aufgenommen werden.'); return; }
+    const t = new Date();
+    const two = (n) => String(n).padStart(2, '0');
+    const name = `foto-${two(t.getHours())}${two(t.getMinutes())}${two(t.getSeconds())}.jpg`;
+    await setPhoto(new File([blob], name, { type: 'image/jpeg' }), true);
+  }
+
   /* ---------- Darstellung ---------- */
 
   const currentBg = () => state.backgrounds.find((b) => b.id === state.bgId) || null;
@@ -590,7 +839,7 @@
 
   function render() {
     frame = 0;
-    if (!state.src) return;
+    if (state.mode !== 'photo' || !state.src) return;
     const { width: w, height: h } = state.src;
     if (needsKey) {
       state.keyed.width = w;
@@ -606,13 +855,17 @@
     preview.classList.toggle('transparent', !currentBg());
   }
 
-  function updatePhotoUI() {
-    const has = !!state.photo;
-    $('#emptyDrop').hidden = has;
-    preview.hidden = !has;
-    $('#photoEmpty').hidden = has;
+  function updateUI() {
+    const m = state.mode;
+    const has = m === 'photo';
+    $('#emptyDrop').hidden = m !== 'empty';
+    $('#view').hidden = m === 'empty';
+    $('#shutterBtn').hidden = m !== 'live';
+    $('#retakeBtn').hidden = !has;
     $('#photoInfo').hidden = !has;
-    $('#tuning').disabled = !has;
+    $('#liveInfo').hidden = m !== 'live';
+    $('#cameraBtn').hidden = m === 'live';
+    $('#tuning').disabled = m === 'empty';
     $('#saveBtn').disabled = !has;
     if (has) {
       $('#photoThumb').src = state.photoUrl;
@@ -675,8 +928,10 @@
 
   /* ---------- Aktionen ---------- */
 
-  async function setPhoto(file) {
+  // fromCamera: Foto kommt aus der Live-Kamera, die dort eingestellte Farbe bleibt.
+  async function setPhoto(file, fromCamera = false) {
     if (!isImage(file)) return;
+    if (!fromCamera) stopCamera();
     let loaded;
     try { loaded = await loadImage(file); } catch (e) { showMessage(e.message); return; }
     if (state.photoUrl) URL.revokeObjectURL(state.photoUrl);
@@ -685,9 +940,10 @@
     state.photoName = file.name;
     const [w, h] = fitSize(loaded.img.naturalWidth, loaded.img.naturalHeight, PREVIEW_MAX);
     state.src = readPixels(loaded.img, w, h);
-    state.key = detectKey(state.src);
+    if (!fromCamera) state.key = detectKey(state.src);
+    state.mode = 'photo';
     setPicking(false);
-    updatePhotoUI();
+    updateUI();
     updateTuningUI();
     scheduleRender();
   }
@@ -735,7 +991,8 @@
 
   function pickColor(e) {
     const rect = preview.getBoundingClientRect();
-    const { width: w, height: h, data } = state.src;
+    const src = state.mode === 'live' ? grabFrame(640) : state.src;
+    const { width: w, height: h, data } = src;
     const cx = Math.floor(((e.clientX - rect.left) / rect.width) * w);
     const cy = Math.floor(((e.clientY - rect.top) / rect.height) * h);
     let r = 0, g = 0, b = 0, n = 0;
@@ -754,7 +1011,7 @@
   }
 
   async function save() {
-    if (!state.photo) return;
+    if (state.mode !== 'photo') return;
     const btn = $('#saveBtn');
     btn.disabled = true;
     btn.textContent = 'Einen Moment …';
@@ -786,12 +1043,12 @@
   /* ---------- Ereignisse ---------- */
 
   const openPhotoDialog = () => $('#photoInput').click();
-  $('#emptyDrop').addEventListener('click', openPhotoDialog);
-  $('#emptyDrop').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPhotoDialog(); }
-  });
+  $('#emptyPick').addEventListener('click', openPhotoDialog);
   $('#photoPick').addEventListener('click', openPhotoDialog);
-  $('#photoChange').addEventListener('click', openPhotoDialog);
+  $('#cameraStart').addEventListener('click', startCamera);
+  $('#cameraBtn').addEventListener('click', startCamera);
+  $('#retakeBtn').addEventListener('click', startCamera);
+  $('#shutterBtn').addEventListener('click', capture);
 
   $('#photoInput').addEventListener('change', (e) => {
     setPhoto(e.target.files[0]);
@@ -816,7 +1073,8 @@
 
   $('#resetBtn').addEventListener('click', () => {
     Object.assign(state, DEFAULTS);
-    if (state.src) state.key = detectKey(state.src);
+    if (state.mode === 'live' && video.videoWidth) state.key = detectKey(grabFrame(320));
+    else if (state.src) state.key = detectKey(state.src);
     updateTuningUI();
     scheduleRender();
   });
@@ -842,7 +1100,7 @@
   window.addEventListener('dragover', (e) => e.preventDefault());
   window.addEventListener('drop', (e) => e.preventDefault());
 
-  updatePhotoUI();
+  updateUI();
   updateTuningUI();
   renderBgGrid();
 })();
