@@ -132,6 +132,33 @@
     max-width: 100%;
   }
   .stage-actions { display: flex; gap: 8px; min-height: 48px; }
+  .preview-wrap { position: relative; max-width: 100%; line-height: 0; }
+  #preview.live { touch-action: none; }
+  .zoom-bar {
+    position: absolute;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, .35);
+    line-height: 1.45;
+  }
+  .zoom-bar button {
+    min-width: 40px;
+    height: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #fff;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .zoom-bar button.active { background: rgba(0, 0, 0, .55); color: #ffd60a; font-weight: 600; }
   .offscreen {
     position: fixed;
     left: 0; top: 0;
@@ -286,7 +313,14 @@
       <span>oder ein Foto <button id="emptyPick" class="link" type="button">auswählen</button> bzw. hierher ziehen</span>
     </div>
     <div id="view" class="view" hidden>
-      <canvas id="preview"></canvas>
+      <div class="preview-wrap">
+        <canvas id="preview"></canvas>
+        <div id="zoomBar" class="zoom-bar" hidden>
+          <button data-zoom="1">1×</button>
+          <button data-zoom="2">2×</button>
+          <button data-zoom="3">3×</button>
+        </div>
+      </div>
       <div class="stage-actions">
         <button id="shutterBtn" class="btn btn-primary btn-large" hidden>Foto aufnehmen</button>
         <button id="retakeBtn" class="btn btn-large" hidden>Neues Foto aufnehmen</button>
@@ -387,6 +421,10 @@
   let stream = null;
   let liveFrame = 0;
   let gl;                      // WebGL-Kontext der Live-Vorschau (false = nicht verfügbar)
+  const DIGITAL_ZOOM_MAX = 3;  // Darüber würde das Foto zu pixelig.
+  let zoom = 1;
+  let hwZoom = null;           // { min, max } wenn die Kamera selbst zoomen kann
+  let hwZoomPending = false;
   let nextBgId = 1;
   let frame = 0;
   let needsKey = true;
@@ -675,9 +713,10 @@
     }`;
   const VERTEX_SHADER = `
     attribute vec2 a_pos;
+    uniform float u_zoom;
     varying vec2 v_uv;
     void main() {
-      v_uv = (a_pos + 1.0) * 0.5;
+      v_uv = 0.5 + a_pos * 0.5 / u_zoom;
       gl_Position = vec4(a_pos, 0.0, 1.0);
     }`;
 
@@ -715,7 +754,7 @@
     ctx.pixelStorei(ctx.UNPACK_FLIP_Y_WEBGL, true);
 
     const loc = {};
-    for (const name of ['u_px', 'u_key', 'u_t0', 'u_t1', 'u_spill']) loc[name] = ctx.getUniformLocation(prog, name);
+    for (const name of ['u_px', 'u_key', 'u_t0', 'u_t1', 'u_spill', 'u_zoom']) loc[name] = ctx.getUniformLocation(prog, name);
     return { canvas, ctx, loc };
   }
 
@@ -727,7 +766,7 @@
       const [cw, ch] = fitSize(w, h, 640);
       state.keyed.width = cw;
       state.keyed.height = ch;
-      state.keyed.getContext('2d').putImageData(keyImage(readPixels(video, cw, ch), state), 0, 0);
+      state.keyed.getContext('2d').putImageData(keyImage(readVideo(cw, ch), state), 0, 0);
       return state.keyed;
     }
     const { canvas, ctx, loc } = gl;
@@ -738,7 +777,9 @@
     }
     ctx.texImage2D(ctx.TEXTURE_2D, 0, ctx.RGBA, ctx.RGBA, ctx.UNSIGNED_BYTE, video);
     const k = keyParams(state);
-    ctx.uniform2f(loc.u_px, 1 / w, 1 / h);
+    const z = digitalZoom();
+    ctx.uniform1f(loc.u_zoom, z);
+    ctx.uniform2f(loc.u_px, 1 / (w * z), 1 / (h * z));
     ctx.uniform2f(loc.u_key, k.kCb, k.kCr);
     ctx.uniform1f(loc.u_t0, k.t0);
     ctx.uniform1f(loc.u_t1, k.t1);
@@ -748,6 +789,99 @@
     ctx.drawArrays(ctx.TRIANGLE_STRIP, 0, 4);
     return canvas;
   }
+
+  /* Zoom: echter Kamerazoom, wenn verfügbar, sonst Ausschnitt aus der Bildmitte. */
+
+  const digitalZoom = () => (hwZoom ? 1 : zoom);
+  const maxZoom = () => (hwZoom ? Math.min(hwZoom.max / hwZoom.min, 10) : DIGITAL_ZOOM_MAX);
+
+  // Sichtbarer Bildausschnitt des Kamerabilds in Pixeln.
+  function videoCrop() {
+    const z = digitalZoom();
+    const sw = video.videoWidth / z, sh = video.videoHeight / z;
+    return [(video.videoWidth - sw) / 2, (video.videoHeight - sh) / 2, sw, sh];
+  }
+
+  function readVideo(w, h) {
+    const ctx = makeCanvas(w, h).getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, ...videoCrop(), 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h);
+  }
+
+  function setZoom(value) {
+    zoom = Math.min(maxZoom(), Math.max(1, value));
+    updateZoomBar();
+    if (hwZoom && !hwZoomPending) {
+      // Höchstens eine Anfrage pro Bild an die Kamera schicken.
+      hwZoomPending = true;
+      requestAnimationFrame(() => {
+        hwZoomPending = false;
+        const track = stream && stream.getVideoTracks()[0];
+        if (!track) return;
+        track.applyConstraints({ advanced: [{ zoom: hwZoom.min * zoom }] }).catch(() => {
+          hwZoom = null; // Kamera lehnt ab: digital weiterzoomen.
+          setZoom(zoom);
+        });
+      });
+    }
+  }
+
+  function updateZoomBar() {
+    const buttons = [...$('#zoomBar').children];
+    let active = buttons[0];
+    for (const b of buttons) {
+      const preset = Number(b.dataset.zoom);
+      b.hidden = preset > maxZoom() + 0.01;
+      if (!b.hidden && preset <= zoom + 0.01) active = b;
+    }
+    for (const b of buttons) {
+      const isActive = b === active;
+      b.classList.toggle('active', isActive);
+      const value = isActive ? zoom : Number(b.dataset.zoom);
+      b.textContent = (Math.round(value * 10) / 10).toLocaleString('de-DE') + '×';
+    }
+  }
+
+  function detectHardwareZoom() {
+    const track = stream && stream.getVideoTracks()[0];
+    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    hwZoom = caps.zoom && caps.zoom.max > caps.zoom.min
+      ? { min: Math.max(caps.zoom.min, 0.0001), max: caps.zoom.max }
+      : null;
+  }
+
+  // Zwei Finger auf dem Live-Bild: zoomen. Mausrad am Computer ebenso.
+  const pointers = new Map();
+  let pinch = null;
+  const pinchDistance = () => {
+    const [a, b] = [...pointers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  };
+  preview.addEventListener('pointerdown', (e) => {
+    if (state.mode !== 'live') return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) pinch = { dist: pinchDistance(), zoom };
+  });
+  preview.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size === 2) setZoom(pinch.zoom * pinchDistance() / pinch.dist);
+  });
+  const endPointer = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+  };
+  preview.addEventListener('pointerup', endPointer);
+  preview.addEventListener('pointercancel', endPointer);
+  preview.addEventListener('wheel', (e) => {
+    if (state.mode !== 'live') return;
+    e.preventDefault();
+    setZoom(zoom * Math.exp(-e.deltaY * 0.002));
+  }, { passive: false });
+  $('#zoomBar').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) setZoom(Number(b.dataset.zoom));
+  });
 
   function renderLive() {
     liveFrame = requestAnimationFrame(renderLive);
@@ -761,7 +895,7 @@
     preview.classList.toggle('transparent', !currentBg());
   }
 
-  const grabFrame = (max) => readPixels(video, ...fitSize(video.videoWidth, video.videoHeight, max));
+  const grabFrame = (max) => readVideo(...fitSize(video.videoWidth, video.videoHeight, max));
 
   async function startCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -777,6 +911,7 @@
           video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
         });
         video.srcObject = stream;
+        detectHardwareZoom();
       }
       await video.play();
     } catch (e) {
@@ -788,6 +923,7 @@
     }
     state.mode = 'live';
     setPicking(false);
+    setZoom(zoom);
     updateUI();
     cancelAnimationFrame(liveFrame);
     renderLive();
@@ -814,8 +950,9 @@
 
   async function capture() {
     if (state.mode !== 'live' || !video.videoWidth) return;
-    const c = makeCanvas(video.videoWidth, video.videoHeight);
-    c.getContext('2d').drawImage(video, 0, 0);
+    const [sx, sy, sw, sh] = videoCrop();
+    const c = makeCanvas(Math.round(sw), Math.round(sh));
+    c.getContext('2d').drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
     pauseCamera();
     preview.classList.remove('flash');
     void preview.offsetWidth; // Animation neu starten
@@ -861,6 +998,8 @@
     $('#emptyDrop').hidden = m !== 'empty';
     $('#view').hidden = m === 'empty';
     $('#shutterBtn').hidden = m !== 'live';
+    $('#zoomBar').hidden = m !== 'live';
+    preview.classList.toggle('live', m === 'live');
     $('#retakeBtn').hidden = !has;
     $('#photoInfo').hidden = !has;
     $('#liveInfo').hidden = m !== 'live';
