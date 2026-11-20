@@ -313,6 +313,27 @@
     z-index: 10;
   }
 
+  /* Vollbild: nur Vorschau und Aufnahme-Knöpfe, z. B. für AirPlay auf den Fernseher. */
+  body.fs { height: 100vh; overflow: hidden; background: #111; }
+  body.fs header, body.fs aside { display: none; }
+  body.fs .app { flex-direction: row; }
+  body.fs .stage { flex: 1; padding: 16px; }
+  body.fs #preview { max-height: calc(100vh - 32px - 62px); box-shadow: none; }
+  body.fs .toggle { color: #c8c8c4; }
+  .fs-exit {
+    position: fixed;
+    top: 12px; right: 12px;
+    z-index: 5;
+    border: 0;
+    border-radius: 999px;
+    padding: 7px 14px;
+    background: rgba(255, 255, 255, .14);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .fs-exit:hover { background: rgba(255, 255, 255, .24); }
+
   @media (max-width: 820px) {
     html, body { height: auto; }
     .app { flex-direction: column; }
@@ -335,7 +356,7 @@
     <div class="brand-sep"></div>
     <h1>Greenscreen<span>Tag der offenen Tür</span></h1>
   </div>
-  <button id="saveBtn" class="btn btn-primary" disabled>Speichern / Senden</button>
+  <button id="saveBtn" class="btn btn-primary save-btn" disabled>Speichern / Senden</button>
 </header>
 
 <div class="app">
@@ -359,6 +380,8 @@
         <label id="timerWrap" class="toggle" hidden><input id="timerToggle" type="checkbox" checked>Selbstauslöser 3 s</label>
         <button id="retakeBtn" class="btn btn-large" hidden>Neues Foto aufnehmen</button>
         <button id="resetPosBtn" class="btn btn-large" hidden>Position zurücksetzen</button>
+        <button id="saveBtn2" class="btn btn-primary btn-large save-btn" hidden>Speichern / Senden</button>
+        <button id="fsBtn" class="btn btn-large" hidden>Vollbild</button>
       </div>
     </div>
     <video id="video" class="offscreen" playsinline muted></video>
@@ -418,6 +441,8 @@
     <footer class="credit">Entwickelt von Rasheed und Carlos</footer>
   </aside>
 </div>
+
+<button id="fsExit" class="fs-exit" hidden>Vollbild beenden</button>
 
 <div id="message" class="message" role="status" hidden></div>
 
@@ -1168,6 +1193,10 @@
     $('#shutterBtn').hidden = m !== 'live';
     $('#zoomBar').hidden = m !== 'live';
     $('#timerWrap').hidden = m !== 'live';
+    const fs = document.body.classList.contains('fs');
+    $('#fsBtn').hidden = m === 'empty' || fs;
+    $('#fsExit').hidden = !fs;
+    $('#saveBtn2').hidden = !(fs && has);
     $('#resetPosBtn').hidden = !has || (state.place.s === 1 && !state.place.x && !state.place.y);
     $('#moveHint').hidden = !has;
     preview.classList.toggle('interactive', m === 'live' || has);
@@ -1331,9 +1360,8 @@
 
   async function save() {
     if (state.mode !== 'photo') return;
-    const btn = $('#saveBtn');
-    btn.disabled = true;
-    btn.textContent = 'Einen Moment …';
+    const btns = document.querySelectorAll('.save-btn');
+    for (const b of btns) { b.disabled = true; b.textContent = 'Einen Moment …'; }
     await new Promise((r) => setTimeout(r, 30)); // UI kurz aktualisieren lassen
 
     try {
@@ -1354,8 +1382,7 @@
     } catch (e) {
       showMessage(e.message);
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Speichern / Senden';
+      for (const b of btns) { b.disabled = false; b.textContent = 'Speichern / Senden'; }
     }
   }
 
@@ -1368,6 +1395,37 @@
   $('#cameraBtn').addEventListener('click', startCamera);
   $('#retakeBtn').addEventListener('click', startCamera);
   $('#shutterBtn').addEventListener('click', onShutter);
+
+  // Vollbild: Die Seite blendet Kopfzeile und Seitenleiste aus; wo der Browser
+  // es kann (z. B. iPad), wird zusätzlich echtes Vollbild ohne Safari-Leisten aktiviert.
+  const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  function setFullscreen(on) {
+    document.body.classList.toggle('fs', on);
+    updateUI();
+    const el = document.documentElement;
+    try {
+      if (on) {
+        const req = el.requestFullscreen || el.webkitRequestFullscreen;
+        const r = req && req.call(el);
+        if (r && r.catch) r.catch(() => {});
+      } else if (fullscreenElement()) {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        const r = exit && exit.call(document);
+        if (r && r.catch) r.catch(() => {});
+      }
+    } catch (e) { /* dann eben nur das Seiten-Vollbild */ }
+  }
+  for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+    document.addEventListener(ev, () => {
+      if (!fullscreenElement() && document.body.classList.contains('fs')) {
+        document.body.classList.remove('fs');
+        updateUI();
+      }
+    });
+  }
+  $('#fsBtn').addEventListener('click', () => setFullscreen(true));
+  $('#fsExit').addEventListener('click', () => setFullscreen(false));
+  $('#saveBtn2').addEventListener('click', save);
   $('#resetPosBtn').addEventListener('click', () => {
     state.place = { ...NO_PLACE };
     $('#resetPosBtn').hidden = true;
@@ -1395,7 +1453,11 @@
 
   $('#pickBtn').addEventListener('click', () => setPicking(!state.picking));
   preview.addEventListener('click', (e) => { if (state.picking) pickColor(e); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setPicking(false); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    setPicking(false);
+    if (document.body.classList.contains('fs')) setFullscreen(false);
+  });
 
   $('#resetBtn').addEventListener('click', () => {
     Object.assign(state, DEFAULTS);
