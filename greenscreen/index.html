@@ -133,7 +133,39 @@
   }
   .stage-actions { display: flex; gap: 8px; min-height: 48px; }
   .preview-wrap { position: relative; max-width: 100%; line-height: 0; }
-  #preview.live { touch-action: none; }
+  #preview.interactive { touch-action: none; }
+  #preview.movable { cursor: grab; }
+  .countdown {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    color: #fff;
+    font-size: min(28vw, 220px);
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 4px 24px rgba(0, 0, 0, .45);
+  }
+  .countdown.tick { animation: tick 1s ease-out; }
+  @keyframes tick {
+    from { transform: scale(1.25); opacity: 0; }
+    20% { transform: scale(1); opacity: 1; }
+    to { opacity: .85; }
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+  .stage-actions { align-items: center; flex-wrap: wrap; justify-content: center; }
   .zoom-bar {
     position: absolute;
     left: 50%;
@@ -315,6 +347,7 @@
     <div id="view" class="view" hidden>
       <div class="preview-wrap">
         <canvas id="preview"></canvas>
+        <div id="countdown" class="countdown" hidden></div>
         <div id="zoomBar" class="zoom-bar" hidden>
           <button data-zoom="1">1×</button>
           <button data-zoom="2">2×</button>
@@ -323,7 +356,9 @@
       </div>
       <div class="stage-actions">
         <button id="shutterBtn" class="btn btn-primary btn-large" hidden>Foto aufnehmen</button>
+        <label id="timerWrap" class="toggle" hidden><input id="timerToggle" type="checkbox" checked>Selbstauslöser 3 s</label>
         <button id="retakeBtn" class="btn btn-large" hidden>Neues Foto aufnehmen</button>
+        <button id="resetPosBtn" class="btn btn-large" hidden>Position zurücksetzen</button>
       </div>
     </div>
     <video id="video" class="offscreen" playsinline muted></video>
@@ -339,6 +374,7 @@
           <div id="photoSize" class="photo-size"></div>
         </div>
       </div>
+      <p id="moveHint" class="hint" hidden style="margin:0 0 12px">Person mit einem Finger verschieben, mit zwei Fingern größer oder kleiner ziehen.</p>
       <p id="liveInfo" class="live-status" hidden><span class="live-dot"></span>Kamera läuft</p>
       <div class="btn-row">
         <button id="cameraBtn" class="btn">Kamera starten</button>
@@ -349,7 +385,7 @@
     <section>
       <h2>2 · Hintergrund</h2>
       <div id="bgGrid" class="bg-grid"></div>
-      <p class="hint">Eigene Bilder mit + hinzufügen oder hierher ziehen.</p>
+      <p class="hint">Eigene Bilder mit + hinzufügen oder hierher ziehen. Sie bleiben auf diesem Gerät gespeichert.</p>
     </section>
 
     <section>
@@ -416,7 +452,9 @@
     spill: DEFAULTS.spill,
     picking: false,
     mode: 'empty',             // 'empty' | 'live' | 'photo'
+    place: { s: 1, x: 0, y: 0 }, // Position der Person auf dem Foto (Maßstab, Versatz in Bildbreiten/-höhen)
   };
+  const NO_PLACE = { s: 1, x: 0, y: 0 };
   const video = $('#video');
   let stream = null;
   let liveFrame = 0;
@@ -425,7 +463,7 @@
   let zoom = 1;
   let hwZoom = null;           // { min, max } wenn die Kamera selbst zoomen kann
   let hwZoomPending = false;
-  let nextBgId = 1;
+  const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   let frame = 0;
   let needsKey = true;
 
@@ -450,7 +488,7 @@
       img.onload = () => resolve({ img, url });
       img.onerror = () => {
         URL.revokeObjectURL(url);
-        reject(new Error(`„${file.name}“ konnte nicht geöffnet werden.`));
+        reject(new Error(`„${file.name || 'Bild'}“ konnte nicht geöffnet werden.`));
       };
       img.src = url;
     });
@@ -579,11 +617,13 @@
     return dst;
   }
 
-  function composite(ctx, w, h, fgCanvas) {
+  // place: Maßstab s um die Bildmitte, dann Versatz x/y in Bruchteilen der Bildgröße.
+  function composite(ctx, w, h, fgCanvas, place = NO_PLACE) {
     ctx.clearRect(0, 0, w, h);
     const bg = currentBg();
     if (bg) drawCover(ctx, bg.img, w, h);
-    ctx.drawImage(fgCanvas, 0, 0, w, h);
+    const { s, x, y } = place;
+    ctx.drawImage(fgCanvas, w * (0.5 - 0.5 * s + x), h * (0.5 - 0.5 * s + y), w * s, h * s);
     drawBadge(ctx, w, h);
   }
 
@@ -857,26 +897,66 @@
     const [a, b] = [...pointers.values()];
     return Math.hypot(a.x - b.x, a.y - b.y) || 1;
   };
+  // Live: zwei Finger zoomen die Kamera. Foto: ein Finger verschiebt die Person,
+  // zwei Finger verschieben und skalieren sie um den Punkt zwischen den Fingern.
+  let move = null;
+  const toFraction = (pt) => {
+    const r = preview.getBoundingClientRect();
+    return { x: (pt.x - r.left) / r.width, y: (pt.y - r.top) / r.height };
+  };
+  const gestureCenter = () => {
+    const pts = [...pointers.values()];
+    return toFraction({ x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length });
+  };
+  function startGesture() {
+    pinch = pointers.size === 2 ? { dist: pinchDistance(), zoom } : null;
+    move = null;
+    if (state.mode === 'photo' && pointers.size) {
+      // Punkt im Foto, der gerade unter dem Finger liegt (unabhängig von der Position).
+      const c = gestureCenter(), pl = state.place;
+      move = {
+        dist: pointers.size === 2 ? pinchDistance() : 0,
+        s: pl.s,
+        qx: 0.5 + (c.x - 0.5 - pl.x) / pl.s,
+        qy: 0.5 + (c.y - 0.5 - pl.y) / pl.s,
+      };
+    }
+  }
+  function placeAt(s, c, q) {
+    s = Math.min(3, Math.max(0.3, s));
+    state.place = { s, x: c.x - 0.5 - (q.x - 0.5) * s, y: c.y - 0.5 - (q.y - 0.5) * s };
+    $('#resetPosBtn').hidden = false;
+    scheduleRender(false);
+  }
   preview.addEventListener('pointerdown', (e) => {
-    if (state.mode !== 'live') return;
+    if (state.picking || (state.mode !== 'live' && state.mode !== 'photo')) return;
+    try { preview.setPointerCapture(e.pointerId); } catch (err) { /* nicht nötig */ }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 2) pinch = { dist: pinchDistance(), zoom };
+    startGesture();
   });
   preview.addEventListener('pointermove', (e) => {
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pinch && pointers.size === 2) setZoom(pinch.zoom * pinchDistance() / pinch.dist);
+    if (state.mode === 'live') {
+      if (pinch && pointers.size === 2) setZoom(pinch.zoom * pinchDistance() / pinch.dist);
+    } else if (state.mode === 'photo' && move) {
+      const s = pointers.size === 2 && move.dist ? move.s * pinchDistance() / move.dist : move.s;
+      placeAt(s, gestureCenter(), { x: move.qx, y: move.qy });
+    }
   });
   const endPointer = (e) => {
-    pointers.delete(e.pointerId);
-    if (pointers.size < 2) pinch = null;
+    if (!pointers.delete(e.pointerId)) return;
+    startGesture(); // mit den restlichen Fingern nahtlos weitermachen
   };
   preview.addEventListener('pointerup', endPointer);
   preview.addEventListener('pointercancel', endPointer);
   preview.addEventListener('wheel', (e) => {
-    if (state.mode !== 'live') return;
+    if (state.mode !== 'live' && state.mode !== 'photo') return;
     e.preventDefault();
-    setZoom(zoom * Math.exp(-e.deltaY * 0.002));
+    const f = Math.exp(-e.deltaY * 0.002);
+    if (state.mode === 'live') { setZoom(zoom * f); return; }
+    const c = toFraction({ x: e.clientX, y: e.clientY }), pl = state.place;
+    placeAt(pl.s * f, c, { x: 0.5 + (c.x - 0.5 - pl.x) / pl.s, y: 0.5 + (c.y - 0.5 - pl.y) / pl.s });
   }, { passive: false });
   $('#zoomBar').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -936,6 +1016,7 @@
   }
 
   function pauseCamera() {
+    cancelCountdown();
     cancelAnimationFrame(liveFrame);
     liveFrame = 0;
     video.pause();
@@ -946,6 +1027,35 @@
     if (stream) stream.getTracks().forEach((t) => t.stop());
     stream = null;
     video.srcObject = null;
+  }
+
+  let countdownTimer = 0;
+  function showCount(n) {
+    const el = $('#countdown');
+    el.textContent = n;
+    el.hidden = false;
+    el.classList.remove('tick');
+    void el.offsetWidth; // Animation neu starten
+    el.classList.add('tick');
+  }
+  function cancelCountdown() {
+    clearInterval(countdownTimer);
+    countdownTimer = 0;
+    $('#countdown').hidden = true;
+    $('#shutterBtn').textContent = 'Foto aufnehmen';
+  }
+  function onShutter() {
+    if (countdownTimer) { cancelCountdown(); return; }
+    if (!$('#timerToggle').checked) { capture(); return; }
+    let n = 3;
+    showCount(n);
+    $('#shutterBtn').textContent = 'Abbrechen';
+    countdownTimer = setInterval(() => {
+      n -= 1;
+      if (n > 0) { showCount(n); return; }
+      cancelCountdown();
+      capture();
+    }, 1000);
   }
 
   async function capture() {
@@ -963,6 +1073,64 @@
     const two = (n) => String(n).padStart(2, '0');
     const name = `foto-${two(t.getHours())}${two(t.getMinutes())}${two(t.getSeconds())}.jpg`;
     await setPhoto(new File([blob], name, { type: 'image/jpeg' }), true);
+  }
+
+  /* ---------- Speichern auf dem Gerät ---------- */
+
+  // Hintergründe liegen in IndexedDB, damit sie ein Neuladen überstehen.
+  // Fehlt der Speicher (z. B. privates Surfen), läuft alles ohne ihn weiter.
+  const STORE = 'backgrounds';
+  let dbPromise = null;
+  function openDb() {
+    if (!dbPromise) {
+      dbPromise = new Promise((resolve) => {
+        try {
+          const req = indexedDB.open('greenscreen', 1);
+          req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }
+    return dbPromise;
+  }
+
+  async function dbRun(mode, fn) {
+    const db = await openDb();
+    if (!db) return null;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE, mode);
+        const req = fn(tx.objectStore(STORE));
+        tx.oncomplete = () => resolve(req ? req.result : null);
+        tx.onerror = tx.onabort = () => resolve(null);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  const prefs = {
+    get(key) { try { return localStorage.getItem('greenscreen.' + key); } catch (e) { return null; } },
+    set(key, value) { try { localStorage.setItem('greenscreen.' + key, value); } catch (e) { /* egal */ } },
+  };
+
+  async function loadSavedBackgrounds() {
+    const rows = (await dbRun('readonly', (st) => st.getAll())) || [];
+    rows.sort((a, b) => a.added - b.added);
+    for (const row of rows) {
+      if (state.backgrounds.some((b) => b.id === row.id)) continue;
+      try {
+        const { img, url } = await loadImage(row.blob);
+        state.backgrounds.push({ id: row.id, img, url, name: row.name });
+      } catch (e) { /* beschädigtes Bild überspringen */ }
+    }
+    const saved = prefs.get('background');
+    if (state.bgId === null && state.backgrounds.some((b) => b.id === saved)) state.bgId = saved;
+    renderBgGrid();
+    scheduleRender(false);
   }
 
   /* ---------- Darstellung ---------- */
@@ -988,7 +1156,7 @@
       preview.width = w;
       preview.height = h;
     }
-    composite(previewCtx, w, h, state.keyed);
+    composite(previewCtx, w, h, state.keyed, state.place);
     preview.classList.toggle('transparent', !currentBg());
   }
 
@@ -999,7 +1167,11 @@
     $('#view').hidden = m === 'empty';
     $('#shutterBtn').hidden = m !== 'live';
     $('#zoomBar').hidden = m !== 'live';
-    preview.classList.toggle('live', m === 'live');
+    $('#timerWrap').hidden = m !== 'live';
+    $('#resetPosBtn').hidden = !has || (state.place.s === 1 && !state.place.x && !state.place.y);
+    $('#moveHint').hidden = !has;
+    preview.classList.toggle('interactive', m === 'live' || has);
+    preview.classList.toggle('movable', has);
     $('#retakeBtn').hidden = !has;
     $('#photoInfo').hidden = !has;
     $('#liveInfo').hidden = m !== 'live';
@@ -1080,6 +1252,7 @@
     const [w, h] = fitSize(loaded.img.naturalWidth, loaded.img.naturalHeight, PREVIEW_MAX);
     state.src = readPixels(loaded.img, w, h);
     if (!fromCamera) state.key = detectKey(state.src);
+    state.place = { ...NO_PLACE };
     state.mode = 'photo';
     setPicking(false);
     updateUI();
@@ -1093,20 +1266,23 @@
       if (!isImage(file)) continue;
       try {
         const { img, url } = await loadImage(file);
-        const bg = { id: nextBgId++, img, url, name: file.name };
+        const bg = { id: newId(), img, url, name: file.name };
         state.backgrounds.push(bg);
+        const blob = new Blob([file], { type: file.type });
+        dbRun('readwrite', (st) => st.put({ id: bg.id, name: bg.name, blob, added: Date.now() }));
         if (firstNew === null) firstNew = bg.id;
       } catch (e) {
         showMessage(e.message);
       }
     }
-    if (firstNew !== null) state.bgId = firstNew;
+    if (firstNew !== null) selectBg(firstNew);
     renderBgGrid();
     scheduleRender(false);
   }
 
   function selectBg(id) {
     state.bgId = id;
+    prefs.set('background', id === null ? '' : id);
     renderBgGrid();
     scheduleRender(false);
   }
@@ -1116,7 +1292,8 @@
     if (i < 0) return;
     URL.revokeObjectURL(state.backgrounds[i].url);
     state.backgrounds.splice(i, 1);
-    if (state.bgId === id) state.bgId = null;
+    dbRun('readwrite', (st) => st.delete(id));
+    if (state.bgId === id) selectBg(null);
     renderBgGrid();
     scheduleRender(false);
   }
@@ -1132,8 +1309,11 @@
     const rect = preview.getBoundingClientRect();
     const src = state.mode === 'live' ? grabFrame(640) : state.src;
     const { width: w, height: h, data } = src;
-    const cx = Math.floor(((e.clientX - rect.left) / rect.width) * w);
-    const cy = Math.floor(((e.clientY - rect.top) / rect.height) * h);
+    const pl = state.mode === 'photo' ? state.place : NO_PLACE;
+    const fx = 0.5 + ((e.clientX - rect.left) / rect.width - 0.5 - pl.x) / pl.s;
+    const fy = 0.5 + ((e.clientY - rect.top) / rect.height - 0.5 - pl.y) / pl.s;
+    const cx = Math.floor(fx * w);
+    const cy = Math.floor(fy * h);
     let r = 0, g = 0, b = 0, n = 0;
     for (let y = cy - 2; y <= cy + 2; y++) {
       for (let x = cx - 2; x <= cx + 2; x++) {
@@ -1162,7 +1342,7 @@
       fg.getContext('2d').putImageData(keyImage(readPixels(state.photo, w, h), state), 0, 0);
 
       const out = makeCanvas(w, h);
-      composite(out.getContext('2d'), w, h, fg);
+      composite(out.getContext('2d'), w, h, fg, state.place);
 
       const hasBg = !!currentBg();
       const type = hasBg ? 'image/jpeg' : 'image/png';
@@ -1187,7 +1367,14 @@
   $('#cameraStart').addEventListener('click', startCamera);
   $('#cameraBtn').addEventListener('click', startCamera);
   $('#retakeBtn').addEventListener('click', startCamera);
-  $('#shutterBtn').addEventListener('click', capture);
+  $('#shutterBtn').addEventListener('click', onShutter);
+  $('#resetPosBtn').addEventListener('click', () => {
+    state.place = { ...NO_PLACE };
+    $('#resetPosBtn').hidden = true;
+    scheduleRender(false);
+  });
+  $('#timerToggle').checked = prefs.get('timer') !== 'off';
+  $('#timerToggle').addEventListener('change', (e) => prefs.set('timer', e.target.checked ? 'on' : 'off'));
 
   $('#photoInput').addEventListener('change', (e) => {
     setPhoto(e.target.files[0]);
@@ -1242,6 +1429,7 @@
   updateUI();
   updateTuningUI();
   renderBgGrid();
+  loadSavedBackgrounds();
 })();
 </script>
 </body>
